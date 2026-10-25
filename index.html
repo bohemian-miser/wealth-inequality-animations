@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Passing It Back</title>
+<style>
+  :root {
+    --bg: #0d1020;
+    --fg: #e6e9f4;
+    --muted: #9aa3bf;
+    --gold: #ffd36e;
+    --panel: rgba(255, 255, 255, 0.05);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
+    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  body { display: flex; flex-direction: column; }
+  header { padding: 16px 16px 4px; max-width: 980px; }
+  h1 { margin: 0 0 4px; font-size: 22px; font-weight: 650; }
+  header p { margin: 0; color: var(--muted); }
+  .gold { color: var(--gold); }
+  canvas { flex: 1; width: 100%; min-height: 380px; display: block; }
+  .controls { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center;
+    padding: 10px 16px; background: var(--panel); }
+  .controls label { display: flex; align-items: center; gap: 10px; }
+  input[type=range] { width: min(320px, 60vw); accent-color: var(--gold); }
+  button { background: transparent; color: var(--fg); border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 6px; padding: 5px 12px; font: inherit; cursor: pointer; }
+  button[aria-pressed=true] { border-color: var(--gold); color: var(--gold); }
+  .readout { color: var(--muted); }
+  .readout b { color: var(--fg); font-weight: 600; }
+  footer { padding: 8px 16px 14px; color: var(--muted); font-size: 12px; }
+  footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Passing it back</h1>
+    <p>Each dot is a household, ageing left to right from 20 to 90; its size is its wealth.
+      Rows are wealth deciles, richest at the top. Older households with something to spare
+      pass <span class="gold">✦ sparkles</span> of it back to younger ones in their row.
+      Tighten the squeeze and watch who can still afford to.</p>
+  </header>
+  <canvas id="stage"></canvas>
+  <div class="controls">
+    <label>Squeeze
+      <input id="squeeze" type="range" min="0" max="1" step="0.01" value="0">
+    </label>
+    <button id="auto" aria-pressed="false">Tighten slowly</button>
+    <button id="pause" aria-pressed="false">Pause</button>
+    <span class="readout">An older household keeps <b id="need">$25k</b> before it gives anything.</span>
+  </div>
+  <footer>
+    Illustrative model, calibrated to
+    <a href="https://www.unsw.edu.au/newsroom/news/2024/04/wealth-gap-widening-new-report-acoss">ACOSS &amp; UNSW, Inequality in Australia 2024</a>
+    (wealth by decile and age, ABS 2022-23) and the
+    <a href="https://www.pc.gov.au/inquiries-and-research/wealth-transfers">Productivity Commission, Wealth transfers and their economic effects (2021)</a>.
+    One second is one year.
+  </footer>
+<script type="module">
+  import { startLifetimes } from './src/lifetimes.js';
+  import { money } from './src/data.js';
+
+  const anim = startLifetimes(document.getElementById('stage'));
+  const slider = document.getElementById('squeeze');
+  const need = document.getElementById('need');
+  const auto = document.getElementById('auto');
+  const pause = document.getElementById('pause');
+
+  const params = new URLSearchParams(location.search);
+  if (params.has('squeeze')) slider.value = params.get('squeeze');
+
+  function apply() {
+    anim.setSqueeze(Number(slider.value));
+    need.textContent = money(anim.need());
+  }
+  slider.addEventListener('input', () => { setAuto(false); apply(); });
+
+  // Ramp the squeeze up over 60 s, hold, ease back, repeat.
+  let autoOn = false, autoStart = 0;
+  function setAuto(on) {
+    autoOn = on;
+    auto.setAttribute('aria-pressed', String(on));
+    autoStart = performance.now() - Number(slider.value) * 60e3;
+  }
+  auto.addEventListener('click', () => setAuto(!autoOn));
+  pause.addEventListener('click', () => {
+    const p = pause.getAttribute('aria-pressed') !== 'true';
+    pause.setAttribute('aria-pressed', String(p));
+    pause.textContent = p ? 'Play' : 'Pause';
+    anim.setPaused(p);
+  });
+  (function tick(now) {
+    if (autoOn) {
+      const t = ((now - autoStart) / 1000) % 100;
+      const v = t < 60 ? t / 60 : t < 80 ? 1 : 1 - (t - 80) / 20;
+      slider.value = v.toFixed(3);
+      apply();
+    }
+    requestAnimationFrame(tick);
+  })(performance.now());
+  apply();
+</script>
+</body>
+</html>
