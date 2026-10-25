@@ -242,6 +242,20 @@ gift_parent_value_1819 = row[y[0] + 1]
 gift_count_1819 = row[y[1] + 1]
 gift_avg_1819 = row[y[1] + 2]
 
+# Estimated inheritance outflow to the next generation (figure 1.7): the
+# HILDA-based and administrative estimates for 2018.
+r17 = pc_rows('1.7', 60)
+i = next(i for i, r in enumerate(r17) if 'Administrative estimate' in r)
+hdr = r17[i]
+c_year = hdr.index('Year')
+outflow_2018 = {}
+for k, r in enumerate(r17[i + 1:i + 30]):
+    if r[c_year] == 2018:
+        outflow_2018['hilda'] = r[hdr.index('HILDA estimate')]
+        nxt = r17[i + 2 + k]
+        outflow_2018['admin'] = next(v for v in nxt if isinstance(v, float))
+        break
+
 r210 = pc_rows('2.10', 80)
 i = next(i for i, r in enumerate(r210) if 'Age of child' in r)
 c = r210[i].index('Age of child')
@@ -357,6 +371,7 @@ data = {
     'inheritanceValue': round(inh_value_1819),
     'giftValue': round(gift_value_1819),
     'giftFromParentsValue': round(gift_parent_value_1819),
+    'inheritanceOutflow2018': {k: round(v) for k, v in outflow_2018.items()},
     'persistenceByAge': persistence,
     'incomeDeciles': income_deciles,
     'medianDisposable': round(median_disp_all * WEEKS),

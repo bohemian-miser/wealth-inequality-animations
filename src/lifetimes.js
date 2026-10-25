@@ -1,23 +1,27 @@
-// Passing it back: a grid of households, one row per income decile (highest
-// at the top), drifting left to right as they age from 20 to 90. Every row
-// lives the model's life for the chosen house price (src/model.js): rent and
-// save, buy, repay, own outright, then help the child in the same row GAP
-// years younger. Nothing is random: what you see is the model.
+// Passing it back, through history: a grid of households, one row per income
+// decile (highest at the top), drifting left to right as they age from 20 to
+// 90 while the years run from 1970. Each dot is one household of the
+// simulation (src/model.js): its colour is renting, paying a mortgage or
+// owning outright; its size is its wealth, which for owners rises with the
+// house price. Gold dots are parents' yearly help; pink are estates passing
+// down at death.
 
 import {
-  AGE_MIN, AGE_MAX, YEARS, ROWS, GAP, RENT, MORTGAGE, OWNED, model,
+  AGE_MIN, AGE_MAX, ROWS, START, SHOW_FROM, END, LAST_PRICE_YEAR,
+  RENT, MORTGAGE, OWNED, simulate,
 } from './model.js';
 
-const PER_ROW = 28;
 const SPAN = AGE_MAX - AGE_MIN;
 const FLIGHT_YEARS = 1.2;
-const FLIGHT_MIN_S = 0.35, FLIGHT_MAX_S = 1.5;
+const FLIGHT_MIN_S = 0.4, FLIGHT_MAX_S = 1.6;
+const BEQUEST_FLIGHT_S = 1.8;
 
-const COLOR = {
+export const COLOR = {
   [RENT]: 'rgb(120,128,150)',
   [MORTGAGE]: 'rgb(120,160,255)',
   [OWNED]: 'rgb(110,225,160)',
   gift: [255, 211, 110],
+  bequest: [255, 140, 170],
 };
 
 export const ROW_LABELS = [
@@ -25,91 +29,97 @@ export const ROW_LABELS = [
   '50–60%', '60–70%', '70–80%', '80–90%', 'Top 10%',
 ];
 
-export function startLifetimes(canvas, { prices }) {
+export function startLifetimes(canvas, chart, { onYear } = {}) {
+  const sim = simulate();
   const ctx = canvas.getContext('2d');
-  let W = 0, H = 0, dpr = 1;
+  const cctx = chart.getContext('2d');
+  let W = 0, H = 0, CW = 0, CH = 0, dpr = 1;
   let layout;
-  let lives = [];
-  let phase = 0;
-  let motes = [];
+  let t = SHOW_FROM;
   let speed = 1;
   let paused = false;
+  let motes = [];
 
-  // One size scale for every price, so dots compare across the slider.
-  const maxWealth = Math.max(...prices.map((p) =>
-    Math.max(...model(p).flatMap((l) => l.wealth))));
+  const giftsByYear = new Map(), bequestsByYear = new Map();
+  for (const g of sim.gifts) (giftsByYear.get(g.year) ?? giftsByYear.set(g.year, []).get(g.year)).push(g);
+  for (const b of sim.bequests) (bequestsByYear.get(b.year) ?? bequestsByYear.set(b.year, []).get(b.year)).push(b);
 
-  const dots = Array.from({ length: ROWS }, () =>
-    Array.from({ length: PER_ROW }, (_, i) => ({ slot: i / PER_ROW })));
+  // One size scale for the whole run, so dots compare across the years.
+  let maxWealth = 1;
+  for (const hs of sim.rows) for (const h of hs) {
+    for (let yi = SHOW_FROM - START; yi <= END - START; yi++) maxWealth = Math.max(maxWealth, h.wealth[yi]);
+  }
 
   function resize() {
     dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const rect = canvas.getBoundingClientRect();
-    W = rect.width; H = rect.height;
-    canvas.width = Math.round(W * dpr);
-    canvas.height = Math.round(H * dpr);
+    const r = canvas.getBoundingClientRect();
+    W = r.width; H = r.height;
+    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+    const c = chart.getBoundingClientRect();
+    CW = c.width; CH = c.height;
+    chart.width = Math.round(CW * dpr); chart.height = Math.round(CH * dpr);
     const narrow = W < 640;
     const left = narrow ? 52 : 92;
-    const right = narrow ? 58 : 150;
+    const right = narrow ? 44 : 120;
     const top = 30, bottom = 40;
     layout = { left, right, top, bottom, narrow, rowH: (H - top - bottom) / ROWS, plotW: W - left - right };
   }
 
-  const ageOf = (d) => AGE_MIN + ((phase + d.slot) % 1) * SPAN;
+  const yi = () => Math.min(END, Math.floor(t)) - START;
   const xOfAge = (age) => layout.left + ((age - AGE_MIN) / SPAN) * layout.plotW;
   const yOfRow = (r) => layout.top + (ROWS - 1 - r + 0.5) * layout.rowH;
-  const maxRadius = () => Math.min(layout.rowH * 0.48, (layout.plotW / PER_ROW) * 0.5);
+  const maxRadius = () => Math.min(layout.rowH * 0.5, (layout.plotW / 28) * 0.55);
   const radius = (w) => Math.max(1.5, maxRadius() * Math.sqrt(Math.max(0, w) / maxWealth));
-  const at = (life, key, age) => life[key][Math.min(YEARS - 1, Math.max(0, Math.floor(age - AGE_MIN)))];
+  const alive = (h, time) => time - h.born >= AGE_MIN && time - h.born < AGE_MAX;
 
-  // A parent gives this year if they own outright and their child, GAP years
-  // younger, still has a mortgage or rent to pay.
-  const giving = (life, age) => at(life, 'gives', age) > 0 && age - GAP >= AGE_MIN
-    && at(life, 'state', age - GAP) !== OWNED;
-
-  function step(dt) {
-    const years = dt * speed;
-    const prev = phase;
-    phase = (phase + years / SPAN) % 1;
-    for (let r = 0; r < ROWS; r++) {
-      for (const d of dots[r]) {
-        const a0 = AGE_MIN + ((prev + d.slot) % 1) * SPAN;
-        const a1 = ageOf(d);
-        // One gift a year, on each birthday, while the parent is giving.
-        if (a1 > a0 && Math.floor(a1) > Math.floor(a0) && giving(lives[r], a1)) {
-          motes.push({ row: r, fromAge: a1, amount: at(lives[r], 'gives', a1), years: 0, t: 0 });
-        }
-      }
+  function spawnYear(year) {
+    for (const g of giftsByYear.get(year) ?? []) {
+      motes.push({ kind: 'gift', row: g.row, from: g.from, to: g.to, amount: g.amount, t: 0 });
     }
-    const flight = Math.min(FLIGHT_MAX_S, Math.max(FLIGHT_MIN_S, FLIGHT_YEARS / speed));
-    motes = motes.filter((m) => { m.years += years; return (m.t += dt / flight) < 1; });
+    for (const b of bequestsByYear.get(year) ?? []) {
+      motes.push({ kind: 'bequest', row: b.row, from: b.from, to: b.to, amount: b.amount, t: 0 });
+    }
   }
 
-  // The arc a gift follows: from the parent to the child GAP years younger,
-  // bowing up inside the row so it never leaves its lane.
-  function arcPoint(row, fromAge, u) {
-    const x0 = xOfAge(Math.min(AGE_MAX, fromAge)), x1 = xOfAge(Math.max(AGE_MIN, fromAge - GAP));
-    const y = yOfRow(row);
-    return [x0 + (x1 - x0) * u, y - Math.sin(Math.PI * u) * layout.rowH * 0.38];
+  function step(dt) {
+    if (t >= END) return;
+    const prev = t;
+    t = Math.min(END, t + dt * speed);
+    for (let y = Math.floor(prev) + 1; y <= Math.floor(t); y++) spawnYear(y);
+    if (Math.floor(t) !== Math.floor(prev)) onYear?.(Math.floor(t));
+    const giftFlight = Math.min(FLIGHT_MAX_S, Math.max(FLIGHT_MIN_S, FLIGHT_YEARS / speed));
+    motes = motes.filter((m) => (m.t += dt / (m.kind === 'gift' ? giftFlight : BEQUEST_FLIGHT_S)) < 1);
+  }
+
+  // A transfer's path: from giver to receiver, bowing up inside the row.
+  function arcPoint(m, u) {
+    const x0 = xOfAge(Math.min(AGE_MAX, t - m.from.born)), x1 = xOfAge(Math.max(AGE_MIN, t - m.to.born));
+    const bow = m.kind === 'bequest' ? 0.45 : 0.32;
+    return [x0 + (x1 - x0) * u, yOfRow(m.row) - Math.sin(Math.PI * u) * layout.rowH * bow];
+  }
+
+  function frontier(row, test) {
+    // The youngest age from which every older household in the row passes.
+    const hs = sim.rows[row].filter((h) => alive(h, t)).sort((a, b) => a.born - b.born);
+    const i = yi();
+    let age = null;
+    for (const h of hs) {
+      if (test(h.st[i])) age = t - h.born; else break;
+    }
+    return age;
   }
 
   function curve(points, style, dash) {
-    if (points.length === 0) return;
-    ctx.strokeStyle = style;
-    ctx.lineWidth = 2;
-    ctx.setLineDash(dash);
+    if (points.length < 1) return;
+    ctx.strokeStyle = style; ctx.lineWidth = 2; ctx.setLineDash(dash);
     ctx.beginPath();
-    points.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
-    ctx.stroke();
-    ctx.setLineDash([]);
-    for (const [x, y] of points) {
-      ctx.fillStyle = style;
-      ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill();
-    }
+    points.forEach(([x, y], k) => (k ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+    ctx.stroke(); ctx.setLineDash([]);
   }
 
   function draw() {
     const { left, right, top, bottom, rowH, narrow, plotW } = layout;
+    const i = yi();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, W, H);
     ctx.font = `${narrow ? 10 : 12}px system-ui, sans-serif`;
@@ -117,16 +127,11 @@ export function startLifetimes(canvas, { prices }) {
 
     for (let r = 0; r < ROWS; r++) {
       const y = yOfRow(r);
-      if (r % 2 === 1) {
-        ctx.fillStyle = 'rgba(255,255,255,0.025)';
-        ctx.fillRect(left, y - rowH / 2, plotW, rowH);
-      }
-      ctx.fillStyle = 'rgba(220,226,240,0.7)';
-      ctx.textAlign = 'right';
+      if (r % 2 === 1) { ctx.fillStyle = 'rgba(255,255,255,0.025)'; ctx.fillRect(left, y - rowH / 2, plotW, rowH); }
+      ctx.fillStyle = 'rgba(220,226,240,0.7)'; ctx.textAlign = 'right';
       ctx.fillText(narrow ? ROW_LABELS[r].replace('Lowest ', '↓').replace('Top ', '↑') : ROW_LABELS[r], left - 10, y);
     }
-    ctx.textAlign = 'center';
-    ctx.fillStyle = 'rgba(220,226,240,0.55)';
+    ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(220,226,240,0.55)';
     for (let a = AGE_MIN; a <= AGE_MAX; a += 10) {
       const x = xOfAge(a);
       ctx.fillRect(x, H - bottom + 2, 1, 5);
@@ -134,88 +139,109 @@ export function startLifetimes(canvas, { prices }) {
     }
     ctx.fillText('age →', left + plotW / 2, H - 8);
 
-    // Who is helping whom: a faint thread from each giving parent to their child.
-    ctx.strokeStyle = 'rgba(255,211,110,0.18)';
-    ctx.lineWidth = 1;
-    for (let r = 0; r < ROWS; r++) {
-      for (const d of dots[r]) {
-        const age = ageOf(d);
-        if (!giving(lives[r], age)) continue;
-        ctx.beginPath();
-        for (let k = 0; k <= 16; k++) {
-          const [x, y] = arcPoint(r, age, k / 16);
-          k ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
-        }
-        ctx.stroke();
-      }
-    }
-
     for (let r = 0; r < ROWS; r++) {
       const y = yOfRow(r);
-      for (const d of dots[r]) {
-        const age = ageOf(d);
-        const state = at(lives[r], 'state', age);
-        const rad = radius(at(lives[r], 'wealth', age));
-        ctx.globalAlpha = Math.max(0, Math.min(1, (age - AGE_MIN) / 2, (AGE_MAX - age) / 2));
-        ctx.fillStyle = COLOR[state];
-        ctx.beginPath(); ctx.arc(xOfAge(age), y, rad, 0, Math.PI * 2); ctx.fill();
+      for (const h of sim.rows[r]) {
+        const age = t - h.born;
+        if (age < AGE_MIN || age >= AGE_MAX) continue;
+        const st = h.st[i];
+        if (st < 0) continue;
+        ctx.globalAlpha = Math.max(0, Math.min(1, (age - AGE_MIN) / 1.5, (AGE_MAX - age) / 1.5));
+        ctx.fillStyle = COLOR[st];
+        ctx.beginPath(); ctx.arc(xOfAge(age), y, radius(h.wealth[i]), 0, Math.PI * 2); ctx.fill();
       }
     }
     ctx.globalAlpha = 1;
 
-    // The curves: the age each row buys, and the age it owns outright.
+    // Frontiers: from what age everyone in the row has bought, and owns outright.
     const buys = [], owns = [];
     for (let r = 0; r < ROWS; r++) {
-      const l = lives[r];
-      if (l.buyAge !== null) buys.push([xOfAge(l.buyAge + 0.5), yOfRow(r)]);
-      if (l.ownAge !== null) owns.push([xOfAge(l.ownAge + 0.5), yOfRow(r)]);
+      const b = frontier(r, (s) => s !== RENT);
+      const o = frontier(r, (s) => s === OWNED);
+      if (b !== null && b > AGE_MIN + 1) buys.push([xOfAge(b), yOfRow(r)]);
+      if (o !== null && o > AGE_MIN + 1) owns.push([xOfAge(o), yOfRow(r)]);
     }
-    curve(buys, 'rgba(120,160,255,0.9)', [5, 4]);
-    curve(owns, 'rgba(110,225,160,0.95)', []);
+    curve(buys, 'rgba(120,160,255,0.85)', [5, 4]);
+    curve(owns, 'rgba(110,225,160,0.9)', []);
 
     for (const m of motes) {
-      const [x, y] = arcPoint(m.row, m.fromAge + m.years, m.t * m.t * (3 - 2 * m.t));
-      const size = Math.max(1.6, Math.min(maxRadius() * 0.4, maxRadius() * 0.25 * Math.sqrt(m.amount / 10000)));
-      const fade = Math.min(1, m.t * 6, (1 - m.t) * 6);
-      const [cr, cg, cb] = COLOR.gift;
-      ctx.globalAlpha = fade;
-      ctx.fillStyle = `rgba(${cr},${cg},${cb},0.35)`;
+      if (!alive(m.to, t)) continue;
+      const [x, y] = arcPoint(m, m.t * m.t * (3 - 2 * m.t));
+      const [cr, cg, cb] = COLOR[m.kind];
+      const size = m.kind === 'gift'
+        ? Math.max(1.6, Math.min(maxRadius() * 0.4, maxRadius() * 0.25 * Math.sqrt(m.amount / 10000)))
+        : Math.max(3, radius(m.amount) * 0.8);
+      ctx.globalAlpha = Math.min(1, m.t * 6, (1 - m.t) * 6);
+      ctx.fillStyle = `rgba(${cr},${cg},${cb},0.3)`;
       ctx.beginPath(); ctx.arc(x, y, size * 1.6, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = `rgb(${cr},${cg},${cb})`;
       ctx.beginPath(); ctx.arc(x, y, size, 0, Math.PI * 2); ctx.fill();
     }
     ctx.globalAlpha = 1;
 
-    // Each row's milestones.
-    const gx = W - right + 12;
+    // Each row now: renting / mortgage / owned outright.
+    const gx = W - right + 10, gw = right - 18;
     ctx.textAlign = 'left';
-    if (!narrow) {
-      ctx.fillStyle = 'rgba(220,226,240,0.55)';
-      ctx.fillText('buys · owns outright', gx, top - 12);
-    }
+    if (!narrow) { ctx.fillStyle = 'rgba(220,226,240,0.55)'; ctx.fillText('the row now', gx, top - 12); }
     for (let r = 0; r < ROWS; r++) {
-      const l = lives[r];
-      const y = yOfRow(r);
-      if (l.buyAge === null) {
-        ctx.fillStyle = 'rgba(160,166,185,0.8)';
-        ctx.fillText(narrow ? 'rents' : 'never buys', gx, y);
-        continue;
+      const n = [0, 0, 0];
+      for (const h of sim.rows[r]) if (alive(h, t) && h.st[i] >= 0) n[h.st[i]]++;
+      const total = n[0] + n[1] + n[2] || 1;
+      let x = gx;
+      for (const s of [RENT, MORTGAGE, OWNED]) {
+        const w = (gw * n[s]) / total;
+        ctx.fillStyle = COLOR[s];
+        ctx.fillRect(x, yOfRow(r) - 5, w, 10);
+        x += w;
       }
-      ctx.fillStyle = COLOR[MORTGAGE];
-      const b = String(l.buyAge);
-      ctx.fillText(b, gx, y);
-      const sep = narrow ? '→' : ' · ';
-      ctx.fillStyle = 'rgba(160,166,185,0.8)';
-      ctx.fillText(sep, gx + ctx.measureText(b).width, y);
-      ctx.fillStyle = l.ownAge === null ? 'rgba(160,166,185,0.8)' : COLOR[OWNED];
-      ctx.fillText(l.ownAge === null ? (narrow ? '—' : 'never') : String(l.ownAge),
-        gx + ctx.measureText(b + sep).width, y);
     }
+    drawChart();
+  }
+
+  // The strip chart: house price, under-40s owning, over-65s' share of homes.
+  function drawChart() {
+    const pad = { l: 46, r: 46, t: 10, b: 20 };
+    const w = CW - pad.l - pad.r, h = CH - pad.t - pad.b;
+    cctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    cctx.clearRect(0, 0, CW, CH);
+    cctx.font = '11px system-ui, sans-serif';
+    cctx.textBaseline = 'middle';
+    const xOf = (year) => pad.l + ((year - SHOW_FROM) / (END - SHOW_FROM)) * w;
+    const yOfPrice = (p) => pad.t + h - (p / 1e6) * h;
+    const yOfPct = (v) => pad.t + h - v * h;
+    cctx.strokeStyle = 'rgba(255,255,255,0.08)'; cctx.lineWidth = 1;
+    for (const v of [0, 0.5, 1]) { cctx.beginPath(); cctx.moveTo(pad.l, yOfPct(v)); cctx.lineTo(pad.l + w, yOfPct(v)); cctx.stroke(); }
+    cctx.fillStyle = 'rgba(220,226,240,0.55)';
+    cctx.textAlign = 'right';
+    for (const [p, label] of [[0, '$0'], [500e3, '$500k'], [1e6, '$1M']]) cctx.fillText(label, pad.l - 6, yOfPrice(p));
+    cctx.textAlign = 'left';
+    for (const v of [0, 0.5, 1]) cctx.fillText(`${v * 100}%`, pad.l + w + 6, yOfPct(v));
+    cctx.textAlign = 'center';
+    for (let y = SHOW_FROM; y <= END; y += 10) cctx.fillText(String(y), xOf(y), CH - 8);
+    // After the data: held at the last year's price.
+    cctx.fillStyle = 'rgba(255,255,255,0.03)';
+    cctx.fillRect(xOf(LAST_PRICE_YEAR), pad.t, xOf(END) - xOf(LAST_PRICE_YEAR), h);
+    const series = [
+      { color: 'rgba(235,238,248,0.9)', y: (s) => yOfPrice(s.price) },
+      { color: 'rgb(120,160,255)', y: (s) => yOfPct(s.youngOwn / s.young) },
+      { color: 'rgb(255,140,170)', y: (s) => yOfPct(s.homesOld / s.homes) },
+    ];
+    const upto = Math.min(END, Math.floor(t));
+    for (const sr of series) {
+      cctx.strokeStyle = sr.color; cctx.lineWidth = 2;
+      cctx.beginPath();
+      for (let y = SHOW_FROM; y <= upto; y++) {
+        const s = sim.stats[y - START];
+        y === SHOW_FROM ? cctx.moveTo(xOf(y), sr.y(s)) : cctx.lineTo(xOf(y), sr.y(s));
+      }
+      cctx.stroke();
+    }
+    cctx.strokeStyle = 'rgba(255,255,255,0.5)'; cctx.lineWidth = 1;
+    cctx.beginPath(); cctx.moveTo(xOf(t), pad.t); cctx.lineTo(xOf(t), pad.t + h); cctx.stroke();
   }
 
   let last = performance.now();
   function frame(now) {
-    // rAF stamps can precede the performance.now() taken at setup.
     const dt = Math.min(0.05, Math.max(0, (now - last) / 1000));
     last = now;
     if (!paused) step(dt);
@@ -228,8 +254,12 @@ export function startLifetimes(canvas, { prices }) {
   requestAnimationFrame(frame);
 
   return {
-    setPrice(p) { lives = model(p); motes = []; return lives; },
+    sim,
+    year: () => t,
+    stats: () => sim.stats[yi()],
+    seek(year) { t = Math.max(SHOW_FROM, Math.min(END, year)); motes = []; onYear?.(Math.floor(t)); },
     setPaused(p) { paused = p; },
     setSpeed(v) { speed = v; },
+    ended: () => t >= END,
   };
 }

@@ -266,6 +266,10 @@ export const DATA = {
  "inheritanceValue": 50409345024,
  "giftValue": 13849091072,
  "giftFromParentsValue": 11815687168,
+ "inheritanceOutflow2018": {
+  "hilda": 52034606102,
+  "admin": 69731053215
+ },
  "persistenceByAge": [
   [
    20,

@@ -8,38 +8,44 @@ Plain HTML and canvas: no build step and no dependencies at runtime.
 
 ## 1. Passing it back
 
-A grid of households. Each row is an income decile among households of the
-same age, with the highest at the top. Dots drift left to right as their
-households age from 20 to 90, and a dot's size is its wealth.
+A grid of households. Each row is an income decile, with the highest at the
+top. Dots drift left to right as their households age from 20 to 90, while
+the years run from 1970 to 2070. Every household, on its decile's ABS
+2019-20 income:
+1. Rents and saves (grey).
+2. Buys at that year's house price once it can (blue).
+3. Pays off a 30-year loan (green).
+4. Passes yearly help to its child in the same row, 25 years younger (gold).
 
-Every row lives one deterministic life, using ABS 2019-20 incomes:
-1. Rent and save (grey).
-2. Buy the house once the mortgage is affordable (blue).
-3. Pay it off (green).
-4. Then pass part of its income to the child in the same row, 25 years
-   younger, until the child owns outright too (gold).
+Owners' dots swell as house prices rise. At 90, the estate passes down
+(pink): to the child, who is 65 by then, or past them to the grandchild if
+the child already owns.
 
-Two curves trace the age each row buys and the age it owns outright.
+Two lines mark, for each row, the age from which everyone in it has bought,
+and the age from which everyone owns outright. A strip chart tracks the
+house price, the share of under-40s who own, and over-65s' share of all
+owned homes.
 
-The slider sets the house price, with marks for what a house would cost at
-today's incomes using each year's price-to-income ratio (OECD). **Play
-history** steps through 1970–2025. At the 1985 ratio, 9 of the 10 rows buy.
-At 2019-20 prices 5 do, and at the 2024 ratio 3 do.
+House prices follow the OECD price-to-income ratio at today's incomes
+through 2025, then are held at that level. In the model, under-40s owning
+falls from 28% (1980) to 18% (2020) and then 13%. Over-65s' share of owned
+homes rises from 45% to 60%. In the middle rows, home ownership ends up
+arriving with the inheritance, at 65.
 
-`?year=1985`, `?price=500000` and `?speed=2` set where it starts.
+`?year=2000`, `?speed=2` and `?paused=1` set how it starts.
 
 ## Grounding
 
 - [`data/SOURCES.md`](data/SOURCES.md): every source table, the model, and
   each assumption, named.
-- [`data/CALIBRATION.md`](data/CALIBRATION.md): the fitted shares, home
-  ownership by age against ABS, a wealth cross-check, and each row's life at
-  three prices.
+- [`data/CALIBRATION.md`](data/CALIBRATION.md): the fitted shares, 2019-20
+  home ownership by age against ABS, estates passed down against the PC, and
+  the history by decade.
 - [`data/VALIDATION.md`](data/VALIDATION.md): the data inputs, with checks.
 - `data/raw/`: the published files, unmodified (CC BY 4.0).
 
-It is calibrated to these sources, but it is still a model. Each row is a
-single, typical life; the misses are listed in CALIBRATION.md.
+It is calibrated to these sources, but it is still a model. The misses are
+listed in CALIBRATION.md and the assumptions in SOURCES.md.
 
 ## Develop
 

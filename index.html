@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Passing It Back</title>
-<meta name="description" content="Australian households by income decile and age: when each can buy a house, when they own it outright, and what they then pass to their children, at any house price. Built on ABS, RBA, OECD and Productivity Commission data.">
+<meta name="description" content="Australian households by income decile and age, 1970 to 2070: who can buy, who owns outright, house values rising, and estates passing down. Built on ABS, RBA, OECD and Productivity Commission data.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path d='M8 1 1 7h2v8h4v-5h2v5h4V7h2z' fill='%236ee1a0'/></svg>">
 <style>
   :root {
@@ -15,6 +15,7 @@
     --rent: rgb(120,128,150);
     --mortgage: rgb(120,160,255);
     --owned: rgb(110,225,160);
+    --pink: rgb(255,140,170);
     --panel: rgba(255, 255, 255, 0.05);
   }
   * { box-sizing: border-box; }
@@ -25,15 +26,17 @@
   h1 { margin: 0 0 4px; font-size: 22px; font-weight: 650; }
   header p { margin: 0; color: var(--muted); }
   .gold { color: var(--gold); } .owned { color: var(--owned); } .mortgage { color: var(--mortgage); }
-  canvas { width: 100%; height: min(72vh, 640px); min-height: 400px; display: block; }
+  #stage { width: 100%; height: min(64vh, 600px); min-height: 380px; display: block; }
+  #chart { width: 100%; height: 130px; display: block; }
+  .now { display: flex; flex-wrap: wrap; gap: 4px 22px; align-items: baseline; padding: 10px 16px 0;
+    color: var(--muted); font-size: 14px; }
+  .now b { color: var(--fg); font-weight: 600; }
+  .now .year { font-size: 30px; font-weight: 700; color: var(--fg); font-variant-numeric: tabular-nums; }
+  #scrub { width: min(420px, 90vw); }
+  .pink { color: var(--pink); }
   .controls { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center;
     padding-top: 12px; padding-bottom: 12px; background: var(--panel); }
-  .price { display: flex; flex-direction: column; gap: 2px; }
-  .price label { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-  .track { position: relative; width: min(360px, 80vw); }
-  input[type=range] { width: 100%; margin: 0; accent-color: var(--owned); }
-  .marks { position: relative; height: 16px; font-size: 11px; color: var(--muted); }
-  .marks span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+  input[type=range] { accent-color: var(--owned); }
   button { background: transparent; color: var(--fg); border: 1px solid rgba(255,255,255,0.2);
     border-radius: 6px; padding: 5px 12px; font: inherit; cursor: pointer; }
   button[aria-pressed=true] { border-color: var(--owned); color: var(--owned); }
@@ -56,28 +59,27 @@
 <body>
   <header>
     <h1>Passing it back</h1>
-    <p>Each dot is a household, ageing left to right from 20 to 90. Rows are income deciles,
-      highest at the top; a dot's size is its wealth. Every household rents and saves, buys the
-      house when it can, pays it off, and then passes <span class="gold">● help</span> to its
-      child in the same row, 25 years younger. Move the house price and watch who gets to
-      <span class="owned">own outright</span>, and when.</p>
+    <p>Each dot is a household, ageing left to right from 20 to 90 as the years run from 1970.
+      Rows are income deciles, highest at the top; a dot's size is its wealth. Households rent and
+      save, buy when they can, and pay it off. Owners' wealth then rises with house prices, and
+      they pass <span class="gold">● help</span> to their child (same row, 25 years younger).
+      At 90, their <span class="pink">● estate</span> passes down: to the child, or past them to the
+      grandchild if the child already owns outright.</p>
   </header>
-  <canvas id="stage" aria-label="Households by income decile and age: renting, paying a mortgage or owning outright, with help flowing from parents to children"></canvas>
+  <div class="now">
+    <span class="year" id="year">1970</span>
+    <span>House <b id="nowPrice">$383k</b></span>
+    <span>Under 40s who own <b id="nowYoung" class="mortgage">–</b></span>
+    <span>Over 65s' share of owned homes <b id="nowOld" class="pink">–</b></span>
+  </div>
+  <canvas id="stage" aria-label="Households by income decile and age through the years: renting, paying a mortgage or owning outright, with help and estates passing from parents to children"></canvas>
+  <canvas id="chart" aria-label="House price, under-40s owning and over-65s' share of owned homes by year"></canvas>
   <div class="controls">
-    <div class="price">
-      <label>House price
-        <b id="priceValue">$685k</b>
-        <span class="readout" id="ratio"></span>
-      </label>
-      <div class="track">
-        <input id="price" type="range" min="250000" max="1000000" step="5000" value="685000" aria-describedby="ratio">
-        <div class="marks" id="marks"></div>
-      </div>
-    </div>
-    <button id="history" aria-pressed="false">Play history</button>
-    <button id="pause" aria-pressed="false">Pause</button>
+    <button id="play" aria-pressed="true">Pause</button>
+    <button id="restart">Restart</button>
+    <input id="scrub" type="range" min="1970" max="2070" step="1" value="1970" aria-label="Year">
     <span class="speed" role="group" aria-label="Speed">Speed
-      <button data-speed="0.25" aria-pressed="false">¼</button><button data-speed="0.5" aria-pressed="false">½</button><button data-speed="1" aria-pressed="true">1</button><button data-speed="2" aria-pressed="false">2</button><button data-speed="4" aria-pressed="false">4</button>
+      <button data-speed="0.5" aria-pressed="false">½</button><button data-speed="1" aria-pressed="true">1</button><button data-speed="2" aria-pressed="false">2</button><button data-speed="4" aria-pressed="false">4</button><button data-speed="8" aria-pressed="false">8</button>
       <span class="unit">years/s</span>
     </span>
   </div>
@@ -85,32 +87,40 @@
     <span><span class="sw" style="background:var(--rent)"></span>renting, saving a deposit</span>
     <span><span class="sw" style="background:var(--mortgage)"></span>paying a mortgage</span>
     <span><span class="sw" style="background:var(--owned)"></span>owns outright</span>
-    <span><span class="ln" style="border-top:2px dashed var(--mortgage)"></span>age each row buys</span>
-    <span><span class="ln" style="border-top:2px solid var(--owned)"></span>age each row owns outright</span>
-    <span><span class="sw" style="background:var(--gold)"></span>help to the child, once a year</span>
+    <span><span class="ln" style="border-top:2px dashed var(--mortgage)"></span>from this age, everyone in the row has bought</span>
+    <span><span class="ln" style="border-top:2px solid var(--owned)"></span>…owns outright</span>
+    <span><span class="sw" style="background:var(--gold)"></span>yearly help</span>
+    <span><span class="sw" style="background:var(--pink)"></span>an estate passing down</span>
+    <span>chart: <span class="ln" style="border-top:2px solid #ebeef8"></span>house price ·
+      <span class="ln" style="border-top:2px solid var(--mortgage)"></span>under 40s who own ·
+      <span class="ln" style="border-top:2px solid var(--pink)"></span>over 65s' share of owned homes · shaded: price held at 2025</span>
   </div>
   <section>
     <h2>What's real and what's assumed</h2>
     <ul>
       <li><b>Incomes</b> are ABS household disposable incomes by decile and age, 2019-20
-        (<i>Household Income and Wealth</i>, table 10.1). A household stays in its decile all its life.</li>
-      <li><b>The house</b> is the ABS mean dwelling price, $685k in 2019-20 (ABS publishes a mean,
-        not a median). The year marks show what a house would cost at 2019-20 incomes, using that
-        year's price-to-income ratio (OECD). In 1985 it would be about $376k; by 2024 it's $818k.</li>
-      <li><b>The mortgage rate</b> is a real rate of 3.6%: the RBA's standard variable rate from
-        1970 to 2025 (8.8% on average) minus inflation. The model works in 2019-20 dollars, so
-        the price slider is the only thing that changes.</li>
-      <li><b>The rules</b>: save 10% of income, buy once the loan can be repaid within 30 years
-        on 17% of income, and put that 17% towards it until it's paid off. After that, give
-        4.75% of income to the child until the child owns outright too. These numbers are
-        calibrated, not guessed. The saving and housing shares are fitted to ABS home ownership
-        by age, with each age group run at the price it faced around 30. The giving share is
-        set so the gifts total matches the Productivity Commission's figure for gifts from
-        parents: about $1,200 per household a year. The model under-predicts how many under-45s
-        own, and has 45–64s paying off too soon. Real buyers start cheaper and trade up.</li>
-      <li><b>Assumptions:</b> a child is 25 years younger than their parent and in the same row.
-        Every generation lives the same life at the price shown. There are no inheritances,
-        super or investments. Wealth here is housing equity plus savings.</li>
+        (<i>Household Income and Wealth</i>, table 10.1). A household stays in its decile all its
+        life, and so does its family line.</li>
+      <li><b>House prices</b> start from the ABS mean dwelling price, $685k in 2019-20 (ABS publishes
+        a mean, not a median). Each year's price is that, scaled by the year's price-to-income ratio
+        from the OECD, so prices are at 2019-20 incomes: $376k in 1985, $818k in 2024. Before 1970
+        the price is held at the 1970 level. After 2025 it is held at the 2025 level, as a what-if,
+        not a forecast. A house is always worth this year's price, so owners' wealth rises with it.</li>
+      <li><b>Mortgages</b>: a 30-year loan at a real rate of 3.6%. That's the RBA standard variable
+        rate from 1970 to 2025, 8.8% on average, minus inflation. A household buys once it has a 20%
+        deposit and the repayments fit within 32% of its income.</li>
+      <li><b>Calibrated</b>: the 4% saving rate (before 65) and the 32% lending limit are
+        fitted so the model's 2019-20 home ownership by age matches ABS's. Owners outright give 4.6%
+        of income to their child. That's set so the gifts total the Productivity Commission's
+        figure for gifts from parents, about $1,200 per household a year.</li>
+      <li><b>Checked, not fitted</b>: estates passed down come to about $8,200 per household a
+        year in the model, against the PC's estimate of $5,300–$7,200 for 2018. It runs high
+        because there is no surviving spouse, aged care or other heirs. The model also has too
+        few young owners, since real first buyers start cheaper and trade up.</li>
+      <li><b>Assumptions</b>: each child is 25 years younger than their parent, in the same row.
+        Everyone dies at 90 and spends their savings down from 65. An heir who already owns
+        outright passes the estate on to their own child. There is no super, shares or second
+        property.</li>
     </ul>
     <p>Full method, every source table and the checks:
       <a href="https://github.com/bohemian-miser/wealth-inequality-animations">github.com/bohemian-miser/wealth-inequality-animations</a>
@@ -119,87 +129,52 @@
   </section>
 <script type="module">
   import { startLifetimes } from './src/lifetimes.js';
-  import { DATA } from './src/data.generated.js';
+  import { START, SHOW_FROM, END } from './src/model.js';
 
-  const money = (x) => x >= 1e6 ? `$${(x / 1e6).toFixed(2)}M` : `$${Math.round(x / 1e3)}k`;
-  const slider = document.getElementById('price');
-  const MIN = Number(slider.min), MAX = Number(slider.max);
-  const years = Object.keys(DATA.priceByYear).map(Number);
-  const markYears = [1985, 2005, 2015, 2024];
-  const marks = document.getElementById('marks');
-  for (const y of markYears) {
-    const s = document.createElement('span');
-    s.textContent = y;
-    s.style.left = `${(100 * (DATA.priceByYear[y] - MIN)) / (MAX - MIN)}%`;
-    marks.append(s);
+  const money = (x) => `$${Math.round(x / 1e3)}k`;
+  const pct = (x) => `${Math.round(100 * x)}%`;
+  const $ = (id) => document.getElementById(id);
+  const scrub = $('scrub'), play = $('play');
+  let scrubbing = false;
+
+  function show(year) {
+    const s = anim.sim.stats[year - START];
+    $('year').textContent = year;
+    $('nowPrice').textContent = money(s.price);
+    $('nowYoung').textContent = pct(s.youngOwn / s.young);
+    $('nowOld').textContent = pct(s.homesOld / s.homes);
+    if (!scrubbing) scrub.value = year;
   }
-
-  const anim = startLifetimes(document.getElementById('stage'), {
-    prices: [MIN, DATA.price2019_20, MAX],
-  });
-  const priceValue = document.getElementById('priceValue');
-  const ratio = document.getElementById('ratio');
-  const historyBtn = document.getElementById('history');
-  const pause = document.getElementById('pause');
+  const anim = startLifetimes($('stage'), $('chart'), { onYear: show });
 
   const params = new URLSearchParams(location.search);
-  slider.value = Math.round(DATA.price2019_20 / 5000) * 5000;
-  if (params.has('price')) slider.value = params.get('price');
-  const startYear = DATA.priceByYear[params.get('year')] ? Number(params.get('year')) : null;
-  if (startYear) slider.value = DATA.priceByYear[startYear];
+  if (params.has('year')) anim.seek(Number(params.get('year')));
+  show(Math.floor(anim.year()));
 
-  function nearestYear(p) {
-    let best = null;
-    for (const y of years) if (best === null || Math.abs(DATA.priceByYear[y] - p) < Math.abs(DATA.priceByYear[best] - p)) best = y;
-    return Math.abs(DATA.priceByYear[best] - p) / p < 0.02 ? best : null;
+  function setPlaying(on) {
+    if (on && anim.ended()) anim.seek(SHOW_FROM);
+    anim.setPaused(!on);
+    play.setAttribute('aria-pressed', String(on));
+    play.textContent = on ? 'Pause' : 'Play';
   }
+  play.addEventListener('click', () => setPlaying(play.getAttribute('aria-pressed') !== 'true'));
+  $('restart').addEventListener('click', () => { anim.seek(SHOW_FROM); setPlaying(true); });
+  scrub.addEventListener('input', () => { scrubbing = true; anim.seek(Number(scrub.value)); scrubbing = false; });
+  (function watch() {
+    if (anim.ended() && play.getAttribute('aria-pressed') === 'true') {
+      play.setAttribute('aria-pressed', 'false'); play.textContent = 'Play';
+    }
+    requestAnimationFrame(watch);
+  })();
 
-  function apply(year = null) {
-    const p = Number(slider.value);
-    anim.setPrice(p);
-    priceValue.textContent = money(p);
-    const y = year ?? nearestYear(p);
-    ratio.textContent = `${(p / DATA.medianDisposable).toFixed(1)}× a middle household's yearly income`
-      + (y ? ` · the ${y} ratio` : '');
-  }
-  slider.addEventListener('input', () => { setHistory(false); apply(); });
-
-  // History: step through each year's price, two seconds a year.
-  let historyOn = false, historyStart = 0;
-  function setHistory(on) {
-    historyOn = on;
-    historyBtn.setAttribute('aria-pressed', String(on));
-    historyBtn.textContent = on ? 'Stop history' : 'Play history';
-    historyStart = performance.now();
-  }
-  historyBtn.addEventListener('click', () => setHistory(!historyOn));
-  let shownYear = null;
-  (function tick(now) {
-    if (historyOn) {
-      const i = Math.floor((now - historyStart) / 2000) % years.length;
-      if (years[i] !== shownYear) {
-        shownYear = years[i];
-        slider.value = DATA.priceByYear[shownYear];
-        apply(shownYear);
-      }
-    } else shownYear = null;
-    requestAnimationFrame(tick);
-  })(performance.now());
-
-  pause.addEventListener('click', () => {
-    const p = pause.getAttribute('aria-pressed') !== 'true';
-    pause.setAttribute('aria-pressed', String(p));
-    pause.textContent = p ? 'Play' : 'Pause';
-    anim.setPaused(p);
-  });
   const speeds = [...document.querySelectorAll('[data-speed]')];
   function setSpeed(v) {
     anim.setSpeed(v);
     for (const b of speeds) b.setAttribute('aria-pressed', String(Number(b.dataset.speed) === v));
   }
   for (const b of speeds) b.addEventListener('click', () => setSpeed(Number(b.dataset.speed)));
-  if (params.has('speed')) setSpeed(Number(params.get('speed')));
-  apply(startYear);
+  setSpeed(Number(params.get('speed') ?? 1));
+  if (params.get('paused') === '1') setPlaying(false);
 </script>
 </body>
 </html>
