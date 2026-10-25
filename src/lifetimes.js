@@ -6,22 +6,21 @@
 // house price. Gold dots are parents' yearly help; pink are estates passing
 // down at death.
 //
-// Everything drawn is a function of the time t, so scrubbing and speed
-// changes can't desynchronise it. The model applies a year's events at the
-// start of the year, so a transfer dot is launched just before and lands
-// exactly then: the moment the recipient's dot changes.
+// Everything drawn is a function of the time t (see src/timeline.js), so
+// scrubbing and speed changes can't desynchronise it. Each household shows
+// its model years on its own clock, so the board doesn't tick all at once on
+// 1 January; a transfer lands at the moment its recipient's dot changes.
 
 import {
   AGE_MIN, AGE_MAX, ROWS, START, SHOW_FROM, END, LAST_PRICE_YEAR,
   RENT, MORTGAGE, OWNED, simulate,
 } from './model.js';
+import {
+  shownState, estateArrivals, onScreen, byYear, activeTransfers,
+} from './timeline.js';
 
 const SPAN = AGE_MAX - AGE_MIN;
-const FLIGHT_S = 0.7; // real seconds a gift takes...
-const FLIGHT_MIN_YEARS = 0.6; // ...but at least this many model years
-const FLIGHT_MAX_YEARS = 1.5; // ...and at most this many
-const ESTATE_MIN_S = 0.4; // the least real time an estate's flight may take
-const HOLD_S = 0.45; // the ring on landing, real seconds...
+const HOLD_S = 0.45; // an estate's ring on landing, real seconds...
 const HOLD_MAX_YEARS = 0.8; // ...but at most this many model years
 const RECENT_YEARS = 10; // the curves average the last this many years' events...
 const RECENT_MIN = 3; // ...where there are at least this many
@@ -39,12 +38,6 @@ export const ROW_LABELS = [
   '50–60%', '60–70%', '70–80%', '80–90%', 'Top 10%',
 ];
 
-const byYear = (events) => {
-  const m = new Map();
-  for (const e of events) (m.get(e.year) ?? m.set(e.year, []).get(e.year)).push(e);
-  return m;
-};
-
 export function startLifetimes(canvas, chart, { onYear } = {}) {
   const sim = simulate();
   const ctx = canvas.getContext('2d');
@@ -57,6 +50,8 @@ export function startLifetimes(canvas, chart, { onYear } = {}) {
 
   const gifts = byYear(sim.gifts), bequests = byYear(sim.bequests);
   const estateOf = new Map(sim.bequests.map((b) => [b.from, b]));
+  const arrivals = estateArrivals(sim.bequests);
+  const firstBuys = sim.buys.filter((e) => e.kind === 'starter' && !e.cash);
 
   // One size scale for every dot, households and transfers alike.
   let maxWealth = 1;
@@ -79,34 +74,13 @@ export function startLifetimes(canvas, chart, { onYear } = {}) {
     layout = { left, right, top, bottom, narrow, rowH: (H - top - bottom) / ROWS, plotW: W - left - right };
   }
 
-  const flightYears = () => Math.min(FLIGHT_MAX_YEARS, Math.max(FLIGHT_MIN_YEARS, FLIGHT_S * speed));
   const holdYears = () => Math.min(HOLD_MAX_YEARS, HOLD_S * speed);
-  // An estate leaves when its owner dies (at 90) and lands when the model
-  // hands it over (the start of the next year), unless that is too quick to
-  // see; then it leaves a little before 90. The dying household is drawn
-  // until its estate leaves.
-  const estateLaunch = (b) => Math.min(b.from.born + AGE_MAX, b.year - Math.max(0.2, ESTATE_MIN_S * speed));
-  const yearIndex = (time) => Math.min(END, Math.floor(time)) - START;
   const xOfAge = (age) => layout.left + ((Math.min(AGE_MAX, Math.max(AGE_MIN, age)) - AGE_MIN) / SPAN) * layout.plotW;
   const yOfRow = (r) => layout.top + (ROWS - 1 - r + 0.5) * layout.rowH;
   const maxRadius = () => Math.min(layout.rowH * 0.5, (layout.plotW / 28) * 0.55);
   const radius = (w, min = 1.5) => Math.max(min, maxRadius() * Math.sqrt(Math.max(0, w) / maxWealth));
 
-  // Transfers in flight or just landed at time t: those of the years whose
-  // launch (year − flight) has passed and whose flash hasn't finished.
-  function activeTransfers() {
-    const f = flightYears(), hold = holdYears();
-    const out = [];
-    for (let y = Math.floor(t - hold); y <= Math.ceil(t + Math.max(f, 4)); y++) {
-      if (t >= y + hold) continue;
-      if (t >= y - f) for (const g of gifts.get(y) ?? []) out.push({ kind: 'gift', e: g, launch: y - f, land: y });
-      for (const b of bequests.get(y) ?? []) {
-        const launch = estateLaunch(b);
-        if (t >= launch) out.push({ kind: 'bequest', e: b, launch, land: y });
-      }
-    }
-    return out;
-  }
+  const shown = (h) => shownState(h, t, arrivals);
 
   function step(dt) {
     if (t >= END) return;
@@ -117,7 +91,6 @@ export function startLifetimes(canvas, chart, { onYear } = {}) {
 
   function draw() {
     const { left, right, top, bottom, rowH, narrow, plotW } = layout;
-    const i = yearIndex(t);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, W, H);
     ctx.font = `${narrow ? 10 : 12}px system-ui, sans-serif`;
@@ -140,20 +113,17 @@ export function startLifetimes(canvas, chart, { onYear } = {}) {
     for (let r = 0; r < ROWS; r++) {
       const y = yOfRow(r);
       for (const h of sim.rows[r]) {
-        const age = t - h.born;
-        if (age < AGE_MIN) continue;
         // A household leaving an estate is drawn until the estate leaves
         // (held at 90 if that's after its birthday); others fade out at 90.
         const estate = estateOf.get(h);
-        if (estate && t >= estateLaunch(estate)) continue;
-        if (!estate && age >= AGE_MAX) continue;
-        const k = age >= AGE_MAX ? estate.year - 1 - START : i;
-        const st = h.st[k];
+        if (!onScreen(h, t, estate, speed)) continue;
+        const { st, w } = shown(h);
         if (st < 0) continue;
+        const age = t - h.born;
         const fade = estate ? 1 : Math.min(1, (AGE_MAX - age) / 1.5);
         ctx.globalAlpha = Math.max(0, Math.min(1, (age - AGE_MIN) / 1.5, fade));
         ctx.fillStyle = COLOR[st];
-        ctx.beginPath(); ctx.arc(xOfAge(age), y, radius(h.wealth[k]), 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(xOfAge(age), y, radius(w), 0, Math.PI * 2); ctx.fill();
       }
     }
     ctx.globalAlpha = 1;
@@ -167,7 +137,6 @@ export function startLifetimes(canvas, chart, { onYear } = {}) {
       return ages.length >= RECENT_MIN ? ages.reduce((a, b) => a + b, 0) / ages.length : null;
     };
     // First homes bought with a mortgage (not cash from an estate).
-    const firstBuys = sim.buys.filter((e) => e.kind === 'starter' && !e.cash);
     for (const [events, color, dash] of [[firstBuys, 'rgba(120,160,255,0.85)', [5, 4]], [sim.payoffs, 'rgba(110,225,160,0.9)', []]]) {
       ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = 2; ctx.setLineDash(dash);
       ctx.beginPath();
@@ -185,17 +154,16 @@ export function startLifetimes(canvas, chart, { onYear } = {}) {
       for (const [x, y] of pts) { ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill(); }
     }
 
-    // Transfers: full strength until they land, then a brief ring on the recipient.
-    for (const m of activeTransfers()) {
+    // Transfers: full strength until they land; an estate then rings its heir.
+    for (const m of activeTransfers(gifts, bequests, t, speed, holdYears())) {
       const { e } = m;
       const [cr, cg, cb] = COLOR[m.kind];
       const toX = xOfAge(t - e.to.born), y0 = yOfRow(e.row);
-      const size = radius(e.amount, m.kind === 'gift' ? 2 : 3);
       if (t >= m.land) {
         const k = (t - m.land) / holdYears();
         ctx.strokeStyle = `rgba(${cr},${cg},${cb},${1 - k})`;
         ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.arc(toX, y0, radius(e.to.wealth[i]) + 3 + k * 6, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.arc(toX, y0, radius(shown(e.to).w) + 3 + k * 6, 0, Math.PI * 2); ctx.stroke();
         continue;
       }
       const u0 = (t - m.launch) / (m.land - m.launch);
@@ -203,9 +171,12 @@ export function startLifetimes(canvas, chart, { onYear } = {}) {
       const fromX = xOfAge(t - e.from.born);
       const bow = m.kind === 'bequest' ? 0.45 : 0.32;
       const x = fromX + (toX - fromX) * u, y = y0 - Math.sin(Math.PI * u) * rowH * bow;
-      ctx.globalAlpha = Math.min(1, u0 * 8);
-      ctx.fillStyle = `rgba(${cr},${cg},${cb},0.3)`;
-      ctx.beginPath(); ctx.arc(x, y, size * 1.25, 0, Math.PI * 2); ctx.fill();
+      const size = radius(e.amount, m.kind === 'gift' ? 1.8 : 3);
+      ctx.globalAlpha = Math.min(1, u0 * 8) * (m.kind === 'gift' ? 0.8 : 1);
+      if (m.kind === 'bequest') {
+        ctx.fillStyle = `rgba(${cr},${cg},${cb},0.3)`;
+        ctx.beginPath(); ctx.arc(x, y, size * 1.25, 0, Math.PI * 2); ctx.fill();
+      }
       ctx.fillStyle = `rgb(${cr},${cg},${cb})`;
       ctx.beginPath(); ctx.arc(x, y, size, 0, Math.PI * 2); ctx.fill();
       ctx.globalAlpha = 1;
@@ -219,7 +190,9 @@ export function startLifetimes(canvas, chart, { onYear } = {}) {
       const n = [0, 0, 0];
       for (const h of sim.rows[r]) {
         const age = t - h.born;
-        if (age >= AGE_MIN && age < AGE_MAX && h.st[i] >= 0) n[h.st[i]]++;
+        if (age < AGE_MIN || age >= AGE_MAX) continue;
+        const { st } = shown(h);
+        if (st >= 0) n[st]++;
       }
       const total = n[0] + n[1] + n[2] || 1;
       let x = gx;

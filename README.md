@@ -59,7 +59,12 @@ python3 scripts/build_data.py               # → src/data.generated.js, data/VA
 node scripts/calibrate.mjs                  # → src/calibration.generated.js, data/CALIBRATION.md
 ```
 
-Every push to `main` deploys to GitHub Pages (`.github/workflows/pages.yml`).
+```bash
+npm test                                    # model and timing checks (node --test, no dependencies)
+```
+
+Every push to `main` runs the tests and, if they pass, deploys to GitHub
+Pages (`.github/workflows/pages.yml`).
 
 ## Data licences
 
