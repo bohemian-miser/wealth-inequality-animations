@@ -81,7 +81,8 @@ draws:
 3. The amount: the PC's average at that age × the quintile's average among
    recipients ÷ the recipient-weighted mean of those averages. The age
    averages are thus preserved, and the quintile spread comes from the PC.
-4. The giver: a dot 30 years older (capped at 89) in the recipient's own row.
+4. The giver: a dot 30 years older (capped at 89) in the recipient's own row,
+   always older than the recipient. Money only ever flows from older to younger.
 
 Dot sizes are always ABS's figures. The gold core shows what a household has
 received in the run so far. It doesn't add to the dot's size, because the

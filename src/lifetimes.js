@@ -61,9 +61,10 @@ export function startLifetimes(canvas) {
   const maxRadius = () => Math.min(layout.rowH * 0.6, (layout.plotW / PER_ROW) * 0.62);
   const radius = (w) => maxRadius() * Math.sqrt(Math.abs(w) / maxWealth);
 
-  function nearest(row, age) {
+  function nearest(row, age, olderThan = -Infinity) {
     let best = null, gap = Infinity;
     for (const d of rows[row]) {
+      if (ageOf(d) <= olderThan) continue;
       const g = Math.abs(ageOf(d) - age);
       if (g < gap) { gap = g; best = d; }
     }
@@ -73,13 +74,15 @@ export function startLifetimes(canvas) {
   function spawn(kind, instant) {
     const t = drawTransfer(kind, rand);
     const to = nearest(t.row, t.age);
-    const from = nearest(t.fromRow, t.fromAge);
+    // The giver is always older than the receiver.
+    const from = nearest(t.fromRow, t.fromAge, ageOf(to) + 1);
+    if (!from) return;
     let amount = t.amount;
     if (kind === 'gift') {
       const f = giftFactor(t.fromRow, shock);
       if (f <= 0) {
         tally.lost += t.amount;
-        if (!instant) fizzles.push({ row: t.fromRow, from, t: 0 });
+        if (!instant) fizzles.push({ row: t.fromRow, age: ageOf(from), t: 0 });
         return;
       }
       tally.lost += amount * (1 - f);
@@ -87,7 +90,9 @@ export function startLifetimes(canvas) {
       tally.given += amount;
     }
     if (instant) { to.received += amount; return; }
-    motes.push({ kind, amount, from, to, fromRow: t.fromRow, toRow: t.row, t: 0,
+    // The start stays with the giver as they were when they gave: a giver
+    // who passes 90 mid-flight wraps to 20, and the mote would fly forwards.
+    motes.push({ kind, amount, fromAge: ageOf(from), years: 0, to, fromRow: t.fromRow, toRow: t.row, t: 0,
       bow: rand() * 2 - 1 });
   }
 
@@ -108,17 +113,18 @@ export function startLifetimes(canvas) {
     }
     const kept = [];
     for (const s of motes) {
+      s.years += years;
       s.t += dt / Math.min(FLIGHT_MAX_S, Math.max(FLIGHT_MIN_S, FLIGHT_YEARS / speed));
       if (s.t >= 1) { s.to.received += s.amount; s.to.flash = 1; } else kept.push(s);
     }
     motes = kept;
-    fizzles = fizzles.filter((f) => (f.t += dt / 1.2) < 1);
+    fizzles = fizzles.filter((f) => { f.age += years; return (f.t += dt / 1.2) < 1; });
     const decay = Math.exp(-dt / 8);
     tally.given *= decay; tally.lost *= decay;
   }
 
   function motePos(s) {
-    const x0 = xOfAge(ageOf(s.from)), y0 = yOfRow(s.fromRow);
+    const x0 = xOfAge(Math.min(AGE_MAX, s.fromAge + s.years)), y0 = yOfRow(s.fromRow);
     const x1 = xOfAge(ageOf(s.to)), y1 = yOfRow(s.toRow);
     const u = s.t * s.t * (3 - 2 * s.t);
     // A slight bow, up or down, so paths between the same rows don't overlap.
@@ -201,7 +207,7 @@ export function startLifetimes(canvas) {
 
     // Gifts that couldn't be afforded: a grey puff at the parent.
     for (const f of fizzles) {
-      const x = xOfAge(ageOf(f.from)), y = yOfRow(f.row);
+      const x = xOfAge(Math.min(AGE_MAX, f.age)), y = yOfRow(f.row);
       ctx.strokeStyle = `rgba(170,175,190,${0.7 * (1 - f.t)})`;
       ctx.lineWidth = 1.2;
       ctx.beginPath(); ctx.arc(x, y, 4 + f.t * 12, 0, Math.PI * 2); ctx.stroke();
