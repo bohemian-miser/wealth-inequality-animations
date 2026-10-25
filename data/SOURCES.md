@@ -40,7 +40,7 @@ and the paper itself is `pc-wealth-transfers-2021.pdf`.
 | 1.9 | Gifts from parents in 2018-19: 1,535,371; all gifts worth $13.8B |
 | 2.1 | Share of each wealth quintile who inherited, and the average inheritance among them |
 | 2.3 | Share of each wealth quintile who received a gift, and the average gift among them |
-| 2.10 | Rank-rank persistence between parents' and children's wealth by the child's age (Australia: Siminski & Yu 2021) |
+| 2.10 | Not used: rank-rank persistence between parents' and children's wealth (see "Own row" below) |
 | Overview fig. 4 | Validation only: transfers by quintile in dollars and as a share of wealth |
 
 ### Cross-checks only
@@ -81,9 +81,7 @@ draws:
 3. The amount: the PC's average at that age × the quintile's average among
    recipients ÷ the recipient-weighted mean of those averages. The age
    averages are thus preserved, and the quintile spread comes from the PC.
-4. The giver: a dot 30 years older (capped at 89), in a decile drawn by a
-   Gaussian copula whose rank correlation with the recipient's decile is the
-   PC's persistence at the recipient's age.
+4. The giver: a dot 30 years older (capped at 89) in the recipient's own row.
 
 Dot sizes are always ABS's figures. The gold core shows what a household has
 received in the run so far. It doesn't add to the dot's size, because the
@@ -98,6 +96,13 @@ runs before anything is drawn.
   is ABS table 7.2: $9.3k, $29.8k, $52.6k, $83.4k and $232.7k, bottom to top.
   Inheritances are not squeezed. The squeeze is a what-if built on real cash
   buffers, not a measured response.
+- **Own row.** Each row stands for a line of families, so a parent gives
+  only to a child in the same decile. Real families are less tied than that:
+  the PC (figure 2.10, Siminski & Yu 2021) measures a rank-rank persistence
+  of 0.09 between parents' and children's wealth when the child is 20, rising
+  to 0.49 from 40. The animation keeps each family in its lane for
+  readability. The amounts each row receives still come from the PC's
+  quintile data, as before.
 - **Equal dots per age.** The grid follows cohorts and leaves out mortality,
   so older ages are over-represented compared with the real population.
 - **Same-age deciles.** A dot keeps its decile all its life. In reality
