@@ -116,12 +116,11 @@ in 1860 to 2070. The animation shows 1970–2070.
     the first year a new 20-year loan's repayments fit. It sells the starter,
     uses savings, and rolls what it owes plus the gap into that loan. A
     household that can pay cash for the mean dwelling buys it straight away.
-    A trade-up from owning outright makes the household a mortgagor again,
-    so its child's gifts pause.
   - *Mortgage:* makes fixed real repayments until the loan is cleared. Gifts
     and estates don't pay it down; they go into savings.
   - *Owned outright:* gives the giving share of its income to its child
-    until the child owns outright too.
+    until the child owns outright too. Gifts come out of income, not
+    savings.
   - *At 90,* dies. Its estate (its home at this year's price, plus what is
     left, less any debt) goes to its child, who is 65. If the child already
     owns outright and the grandchild (40) still rents, it goes to the
@@ -140,7 +139,7 @@ tenure by age: renting, mortgaged and owned outright, for each of 7 age
 bands. The giving share is pinned so the model's 2017–2019 gifts per
 household equal the PC's.
 
-- **Result:** save **8%** of income, a lending limit of **18%** of income,
+- **Result:** save **7.5%** of income, a lending limit of **18%** of income,
   and give **4.8%**.
 - **The 18% is at the real rate.** In first-year repayments at the average
   nominal rate (8.4%) it is about 31% of income, close to the usual bank
@@ -160,7 +159,8 @@ The full tables, and the history by decade, are in `data/CALIBRATION.md`.
 
 - A household stays in its income decile all its life, and its children
   are in the same decile. Real incomes and families move between deciles,
-  which is why the lowest two rows never buy in the model.
+  which is why the lowest row never buys in the model, and the next row up
+  buys late, mostly with an inheritance.
 - Incomes are fixed at 2019-20 levels, and prices move with the
   price-to-income ratio.
 - The starter home is 70% of the mean dwelling value. For scale: the

@@ -58,28 +58,29 @@ export function shownState(h, t, arrivals) {
 // A transfer from year Y lands when the recipient's year Y begins on screen.
 export const landing = (e) => e.year + phaseOf(e.to);
 
-// Flight times, in model years, at a given speed (model years per second).
-export const giftFlight = (speed) => Math.min(1.5, Math.max(0.6, 0.7 * speed));
-export const estateMinFlight = (speed) => Math.max(0.2, 0.4 * speed);
+// Flight times are in model years and don't depend on speed, so a moment
+// always looks the same whatever the speed (speed only runs the clock).
+export const GIFT_FLIGHT = 0.8;
+export const ESTATE_MIN_FLIGHT = 0.6;
 
-export function giftTiming(g, speed) {
+export function giftTiming(g) {
   const land = landing(g);
-  return { launch: land - giftFlight(speed), land };
+  return { launch: land - GIFT_FLIGHT, land };
 }
 
-// An estate leaves when its owner dies (at 90), unless that leaves too little
-// time to see it fly; then it leaves a little earlier.
-export function estateTiming(b, speed) {
+// An estate leaves when its owner dies (at 90), or, if the hand-over follows
+// too soon to see it fly, a little before.
+export function estateTiming(b) {
   const land = landing(b);
-  return { launch: Math.min(b.from.born + AGE_MAX, land - estateMinFlight(speed)), land };
+  return { launch: Math.min(b.from.born + AGE_MAX, land - ESTATE_MIN_FLIGHT), land };
 }
 
 // Is a household on screen at time t? From 20 until 90, or, if it leaves an
 // estate, until the estate leaves.
-export function onScreen(h, t, estate, speed) {
+export function onScreen(h, t, estate) {
   const age = t - h.born;
   if (age < 20) return false;
-  if (estate) return t < estateTiming(estate, speed).launch;
+  if (estate) return t < estateTiming(estate).launch;
   return age < AGE_MAX;
 }
 
@@ -90,15 +91,15 @@ export function byYear(events) {
 }
 
 // Transfers in flight at time t, or (estates) just landed within `hold`.
-export function activeTransfers(gifts, bequests, t, speed, hold) {
+export function activeTransfers(gifts, bequests, t, hold) {
   const out = [];
-  for (let y = Math.floor(t - hold) - 1; y <= Math.ceil(t) + 3; y++) {
+  for (let y = Math.floor(t - hold) - 1; y <= Math.ceil(t) + 2; y++) {
     for (const g of gifts.get(y) ?? []) {
-      const { launch, land } = giftTiming(g, speed);
+      const { launch, land } = giftTiming(g);
       if (t >= launch && t < land) out.push({ kind: 'gift', e: g, launch, land });
     }
     for (const b of bequests.get(y) ?? []) {
-      const { launch, land } = estateTiming(b, speed);
+      const { launch, land } = estateTiming(b);
       if (t >= launch && t < land + hold) out.push({ kind: 'bequest', e: b, launch, land });
     }
   }

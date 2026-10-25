@@ -6,11 +6,10 @@ import assert from 'node:assert/strict';
 import { simulate, START, AGE_MAX } from '../src/model.js';
 import {
   phaseOf, shownYear, shownState, estateArrivals, giftTiming, estateTiming,
-  estateMinFlight, onScreen, byYear, activeTransfers,
+  ESTATE_MIN_FLIGHT, onScreen, byYear, activeTransfers,
 } from '../src/timeline.js';
 
 const sim = simulate();
-const SPEEDS = [0.5, 1, 2, 4, 8];
 const EPS = 1e-6;
 const estateOf = new Map(sim.bequests.map((b) => [b.from, b]));
 const arrivals = estateArrivals(sim.bequests);
@@ -27,32 +26,29 @@ test('phases are in [0, 1) and differ between neighbours', () => {
 
 test('an estate lands exactly when its heir shows the year it arrives', () => {
   for (const b of sim.bequests) {
-    for (const speed of SPEEDS) {
-      const { launch, land } = estateTiming(b, speed);
-      assert.equal(shownYear(b.to, land - EPS), b.year - 1, 'heir still on the old year just before');
-      assert.equal(shownYear(b.to, land + EPS), b.year, 'heir on the new year as it lands');
-      assert.ok(land - launch >= estateMinFlight(speed) - EPS, 'visible flight');
-      assert.ok(launch <= b.from.born + AGE_MAX + EPS, 'leaves no later than the death');
-    }
+    const { launch, land } = estateTiming(b);
+    assert.equal(shownYear(b.to, land - EPS), b.year - 1, 'heir still on the old year just before');
+    assert.equal(shownYear(b.to, land + EPS), b.year, 'heir on the new year as it lands');
+    assert.ok(land - launch >= ESTATE_MIN_FLIGHT - EPS, 'visible flight');
+    assert.ok(launch <= b.from.born + AGE_MAX + EPS, 'leaves no later than the death');
+    assert.ok(launch >= b.from.born + AGE_MAX - ESTATE_MIN_FLIGHT - EPS, 'and not long before');
   }
 });
 
 test('the dying household is on screen until its estate leaves, then gone', () => {
   for (const b of sim.bequests) {
-    for (const speed of SPEEDS) {
-      const { launch } = estateTiming(b, speed);
-      if (launch - EPS - b.from.born >= 20) assert.ok(onScreen(b.from, launch - EPS, b, speed));
-      assert.ok(!onScreen(b.from, launch + EPS, b, speed));
-      // While shown past 90 it holds its last living year.
-      const st = shownState(b.from, launch - EPS, arrivals).st;
-      assert.ok(st >= 0, 'has a state to draw');
-    }
+    const { launch } = estateTiming(b);
+    if (launch - EPS - b.from.born >= 20) assert.ok(onScreen(b.from, launch - EPS, b));
+    assert.ok(!onScreen(b.from, launch + EPS, b));
+    // While shown past 90 it holds its last living year.
+    const st = shownState(b.from, launch - EPS, arrivals).st;
+    assert.ok(st >= 0, 'has a state to draw');
   }
 });
 
 test('a gift lands as its recipient turns to the year it was given', () => {
   for (const g of sim.gifts) {
-    const { launch, land } = giftTiming(g, 1);
+    const { launch, land } = giftTiming(g);
     assert.ok(launch < land);
     // (In a recipient's first year there is no earlier year to show.)
     if (g.year > Math.ceil(g.to.born + 20)) assert.equal(shownYear(g.to, land - EPS), g.year - 1);
@@ -69,7 +65,7 @@ test('households never show a year after they died', () => {
 
 test('drawn wealth moves smoothly except when an estate lands', () => {
   const landings = new Map();
-  for (const b of sim.bequests) landings.set(b.to, [...(landings.get(b.to) ?? []), estateTiming(b, 1).land]);
+  for (const b of sim.bequests) landings.set(b.to, [...(landings.get(b.to) ?? []), estateTiming(b).land]);
   let jumps = 0;
   for (const h of sim.rows.flat().filter((_, i) => i % 7 === 0)) {
     let prev = null;
@@ -89,18 +85,16 @@ test('drawn wealth moves smoothly except when an estate lands', () => {
 
 test('activeTransfers returns exactly the transfers in their window', () => {
   const gifts = byYear(sim.gifts), bequests = byYear(sim.bequests);
-  for (const speed of [1, 8]) {
-    const hold = 0.5;
-    for (let t = 1990; t < 2000; t += 0.37) {
-      const got = new Set(activeTransfers(gifts, bequests, t, speed, hold).map((m) => m.e));
-      for (const g of sim.gifts.filter((e) => Math.abs(e.year - t) < 4)) {
-        const { launch, land } = giftTiming(g, speed);
-        assert.equal(got.has(g), t >= launch && t < land);
-      }
-      for (const b of sim.bequests.filter((e) => Math.abs(e.year - t) < 6)) {
-        const { launch, land } = estateTiming(b, speed);
-        assert.equal(got.has(b), t >= launch && t < land + hold);
-      }
+  const hold = 0.5;
+  for (let t = 1990; t < 2000; t += 0.37) {
+    const got = new Set(activeTransfers(gifts, bequests, t, hold).map((m) => m.e));
+    for (const g of sim.gifts.filter((e) => Math.abs(e.year - t) < 4)) {
+      const { launch, land } = giftTiming(g);
+      assert.equal(got.has(g), t >= launch && t < land);
+    }
+    for (const b of sim.bequests.filter((e) => Math.abs(e.year - t) < 6)) {
+      const { launch, land } = estateTiming(b);
+      assert.equal(got.has(b), t >= launch && t < land + hold);
     }
   }
 });
@@ -111,4 +105,13 @@ test('the start year has no stale state', () => {
     assert.ok(shownState(h, 1970, arrivals).st >= 0);
     assert.ok(h.st[1970 - START] >= 0);
   }
+});
+
+test('a gift is given while its giver is still on screen', () => {
+  let gone = 0;
+  for (const g of sim.gifts) {
+    const { launch } = giftTiming(g);
+    if (!onScreen(g.from, launch, estateOf.get(g.from))) gone++;
+  }
+  assert.ok(gone / sim.gifts.length < 0.02, `${gone} of ${sim.gifts.length} gifts leave a giver not drawn`);
 });

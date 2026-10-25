@@ -20,8 +20,7 @@ import {
 } from './timeline.js';
 
 const SPAN = AGE_MAX - AGE_MIN;
-const HOLD_S = 0.45; // an estate's ring on landing, real seconds...
-const HOLD_MAX_YEARS = 0.8; // ...but at most this many model years
+const HOLD_YEARS = 0.5; // an estate's ring on landing, in model years
 const RECENT_YEARS = 10; // the curves average the last this many years' events...
 const RECENT_MIN = 3; // ...where there are at least this many
 
@@ -74,7 +73,6 @@ export function startLifetimes(canvas, chart, { onYear } = {}) {
     layout = { left, right, top, bottom, narrow, rowH: (H - top - bottom) / ROWS, plotW: W - left - right };
   }
 
-  const holdYears = () => Math.min(HOLD_MAX_YEARS, HOLD_S * speed);
   const xOfAge = (age) => layout.left + ((Math.min(AGE_MAX, Math.max(AGE_MIN, age)) - AGE_MIN) / SPAN) * layout.plotW;
   const yOfRow = (r) => layout.top + (ROWS - 1 - r + 0.5) * layout.rowH;
   const maxRadius = () => Math.min(layout.rowH * 0.5, (layout.plotW / 28) * 0.55);
@@ -85,7 +83,7 @@ export function startLifetimes(canvas, chart, { onYear } = {}) {
   function step(dt) {
     if (t >= END) return;
     const prev = t;
-    t = Math.min(END, t + dt * speed);
+    t = Math.max(SHOW_FROM, Math.min(END, t + dt * speed));
     if (Math.floor(t) !== Math.floor(prev)) onYear?.(Math.floor(t));
   }
 
@@ -110,13 +108,16 @@ export function startLifetimes(canvas, chart, { onYear } = {}) {
     }
     ctx.fillText('age →', left + plotW / 2, H - 8);
 
+    // Dots and transfers stay inside the plot, clear of the labels and bars.
+    ctx.save();
+    ctx.beginPath(); ctx.rect(left - 14, 0, plotW + 28, H - bottom); ctx.clip();
     for (let r = 0; r < ROWS; r++) {
       const y = yOfRow(r);
       for (const h of sim.rows[r]) {
         // A household leaving an estate is drawn until the estate leaves
         // (held at 90 if that's after its birthday); others fade out at 90.
         const estate = estateOf.get(h);
-        if (!onScreen(h, t, estate, speed)) continue;
+        if (!onScreen(h, t, estate)) continue;
         const { st, w } = shown(h);
         if (st < 0) continue;
         const age = t - h.born;
@@ -155,12 +156,12 @@ export function startLifetimes(canvas, chart, { onYear } = {}) {
     }
 
     // Transfers: full strength until they land; an estate then rings its heir.
-    for (const m of activeTransfers(gifts, bequests, t, speed, holdYears())) {
+    for (const m of activeTransfers(gifts, bequests, t, HOLD_YEARS)) {
       const { e } = m;
       const [cr, cg, cb] = COLOR[m.kind];
       const toX = xOfAge(t - e.to.born), y0 = yOfRow(e.row);
       if (t >= m.land) {
-        const k = (t - m.land) / holdYears();
+        const k = (t - m.land) / HOLD_YEARS;
         ctx.strokeStyle = `rgba(${cr},${cg},${cb},${1 - k})`;
         ctx.lineWidth = 2;
         ctx.beginPath(); ctx.arc(toX, y0, radius(shown(e.to).w) + 3 + k * 6, 0, Math.PI * 2); ctx.stroke();
@@ -172,7 +173,8 @@ export function startLifetimes(canvas, chart, { onYear } = {}) {
       const bow = m.kind === 'bequest' ? 0.45 : 0.32;
       const x = fromX + (toX - fromX) * u, y = y0 - Math.sin(Math.PI * u) * rowH * bow;
       const size = radius(e.amount, m.kind === 'gift' ? 1.8 : 3);
-      ctx.globalAlpha = Math.min(1, u0 * 8) * (m.kind === 'gift' ? 0.8 : 1);
+      // An estate takes over from its owner's dot, so it starts at full strength.
+      ctx.globalAlpha = m.kind === 'gift' ? 0.8 * Math.min(1, u0 * 8) : 1;
       if (m.kind === 'bequest') {
         ctx.fillStyle = `rgba(${cr},${cg},${cb},0.3)`;
         ctx.beginPath(); ctx.arc(x, y, size * 1.25, 0, Math.PI * 2); ctx.fill();
@@ -181,9 +183,10 @@ export function startLifetimes(canvas, chart, { onYear } = {}) {
       ctx.beginPath(); ctx.arc(x, y, size, 0, Math.PI * 2); ctx.fill();
       ctx.globalAlpha = 1;
     }
+    ctx.restore();
 
     // Each row now: renting / mortgage / owned outright.
-    const gx = W - right + 10, gw = right - 18;
+    const gx = W - right + 18, gw = right - 24;
     ctx.textAlign = 'left';
     if (!narrow) { ctx.fillStyle = 'rgba(220,226,240,0.55)'; ctx.fillText('the row now', gx, top - 12); }
     for (let r = 0; r < ROWS; r++) {
@@ -215,13 +218,14 @@ export function startLifetimes(canvas, chart, { onYear } = {}) {
     cctx.font = '11px system-ui, sans-serif';
     cctx.textBaseline = 'middle';
     const xOf = (year) => pad.l + ((year - SHOW_FROM) / (END - SHOW_FROM)) * w;
-    const yOfPrice = (p) => pad.t + h - (p / 1e6) * h;
+    const PRICE_MAX = 1.2e6; // so $ and % gridlines don't coincide
+    const yOfPrice = (p) => pad.t + h - (p / PRICE_MAX) * h;
     const yOfPct = (v) => pad.t + h - v * h;
     cctx.strokeStyle = 'rgba(255,255,255,0.08)'; cctx.lineWidth = 1;
     for (const v of [0, 0.5, 1]) { cctx.beginPath(); cctx.moveTo(pad.l, yOfPct(v)); cctx.lineTo(pad.l + w, yOfPct(v)); cctx.stroke(); }
     cctx.fillStyle = 'rgba(220,226,240,0.55)';
     cctx.textAlign = 'right';
-    for (const [p, label] of [[0, '$0'], [500e3, '$500k'], [1e6, '$1M']]) cctx.fillText(label, pad.l - 6, yOfPrice(p));
+    for (const [p, label] of [[0, '$0'], [600e3, '$600k'], [1.2e6, '$1.2M']]) cctx.fillText(label, pad.l - 6, yOfPrice(p));
     cctx.textAlign = 'left';
     for (const v of [0, 0.5, 1]) cctx.fillText(`${v * 100}%`, pad.l + w + 6, yOfPct(v));
     cctx.textAlign = 'center';
@@ -230,20 +234,26 @@ export function startLifetimes(canvas, chart, { onYear } = {}) {
     // After the data: held at the last year's price.
     cctx.fillStyle = 'rgba(255,255,255,0.03)';
     cctx.fillRect(xOf(LAST_PRICE_YEAR), pad.t, xOf(END) - xOf(LAST_PRICE_YEAR), h);
+    // The shares are averaged over the last 5 years: households are born every
+    // 2.5 years, which otherwise puts a sawtooth in them.
     const series = [
-      { color: 'rgba(235,238,248,0.9)', y: (s) => yOfPrice(s.price) },
-      { color: 'rgb(120,160,255)', y: (s) => yOfPct(s.youngOwn / s.young) },
-      { color: 'rgb(255,140,170)', y: (s) => yOfPct(s.homesOld / s.homes) },
+      { color: 'rgba(235,238,248,0.9)', y: (s) => yOfPrice(s.price), smooth: false },
+      { color: 'rgb(120,160,255)', v: (s) => s.youngOwn / s.young, smooth: true },
+      { color: 'rgb(255,140,170)', v: (s) => s.homesOld / s.homes, smooth: true },
     ];
+    const smoothed = (sr, y) => {
+      let sum = 0, n = 0;
+      for (let k = Math.max(SHOW_FROM, y - 4); k <= y; k++) { sum += sr.v(sim.stats[k - START]); n++; }
+      return yOfPct(sum / n);
+    };
     const upto = Math.min(END, Math.floor(t));
     for (const sr of series) {
-      cctx.strokeStyle = sr.color; cctx.lineWidth = 2;
+      cctx.strokeStyle = sr.color; cctx.fillStyle = sr.color; cctx.lineWidth = 2;
+      const yAt = (y) => (sr.smooth ? smoothed(sr, y) : sr.y(sim.stats[y - START]));
       cctx.beginPath();
-      for (let y = SHOW_FROM; y <= upto; y++) {
-        const s = sim.stats[y - START];
-        y === SHOW_FROM ? cctx.moveTo(xOf(y), sr.y(s)) : cctx.lineTo(xOf(y), sr.y(s));
-      }
+      for (let y = SHOW_FROM; y <= upto; y++) y === SHOW_FROM ? cctx.moveTo(xOf(y), yAt(y)) : cctx.lineTo(xOf(y), yAt(y));
       cctx.stroke();
+      cctx.beginPath(); cctx.arc(xOf(upto), yAt(upto), 2.5, 0, Math.PI * 2); cctx.fill();
     }
     cctx.strokeStyle = 'rgba(255,255,255,0.5)'; cctx.lineWidth = 1;
     cctx.beginPath(); cctx.moveTo(xOf(t), pad.t); cctx.lineTo(xOf(t), pad.t + h); cctx.stroke();
@@ -265,9 +275,13 @@ export function startLifetimes(canvas, chart, { onYear } = {}) {
   return {
     sim,
     year: () => t,
-    seek(year) { t = Math.max(SHOW_FROM, Math.min(END, year)); onYear?.(Math.floor(t)); },
+    seek(year) {
+      if (!Number.isFinite(year)) return;
+      t = Math.max(SHOW_FROM, Math.min(END, year));
+      onYear?.(Math.floor(t));
+    },
     setPaused(p) { paused = p; },
-    setSpeed(v) { speed = v; },
+    setSpeed(v) { if (Number.isFinite(v) && v > 0) speed = v; },
     ended: () => t >= END,
   };
 }

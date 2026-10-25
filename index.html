@@ -75,7 +75,7 @@
   <canvas id="stage" aria-label="Households by income decile and age through the years: renting, paying a mortgage or owning outright, with help and estates passing from parents to children"></canvas>
   <canvas id="chart" aria-label="House price, under-40s owning and over-65s' share of owned homes by year"></canvas>
   <div class="controls">
-    <button id="play" aria-pressed="true">Pause</button>
+    <button id="play">Pause</button>
     <button id="restart">Restart</button>
     <input id="scrub" type="range" min="1970" max="2070" step="1" value="1970" aria-label="Year">
     <span class="speed" role="group" aria-label="Speed">Speed
@@ -88,12 +88,12 @@
     <span><span class="sw" style="background:var(--mortgage)"></span>paying a mortgage</span>
     <span><span class="sw" style="background:var(--owned)"></span>owns outright</span>
     <span><span class="ln" style="border-top:2px dashed var(--mortgage)"></span>average age the row took out its first mortgage (last 10 years, 3+ buyers)</span>
-    <span><span class="ln" style="border-top:2px solid var(--owned)"></span>…paid it off</span>
+    <span><span class="ln" style="border-top:2px solid var(--owned)"></span>…paid off its last mortgage</span>
     <span><span class="sw" style="background:var(--gold)"></span>yearly help</span>
     <span><span class="sw" style="background:var(--pink)"></span>an estate passing down</span>
     <span>chart: <span class="ln" style="border-top:2px solid #ebeef8"></span>house price ·
       <span class="ln" style="border-top:2px solid var(--mortgage)"></span>under 40s who own ·
-      <span class="ln" style="border-top:2px solid var(--pink)"></span>over 65s' share of owned homes · left axis $, right axis % · shaded: price held at 2025</span>
+      <span class="ln" style="border-top:2px solid var(--pink)"></span>over 65s' share of owned homes · left axis $0–1.2M, right axis %, shares averaged over 5 years · shaded: price held at 2025</span>
   </div>
   <section>
     <h2>What's real and what's assumed</h2>
@@ -119,7 +119,7 @@
         variable rate, then its discounted rate from 2004), 8.4% on average from 1970 to 2025, minus
         each year's inflation. That's one rate for all years. The real rate averaged 1.7% before 1990
         and 4.2% since.</li>
-      <li><b>Calibrated</b>: the saving rate (8% of income, before 65) and the lending limit are
+      <li><b>Calibrated</b>: the saving rate (7.5% of income, before 65) and the lending limit are
         fitted so the model's 2019-20 renting, mortgaged and owned-outright shares by age match
         ABS's. The limit is 18% of income at the real rate. In first-year repayments at the average
         nominal rate that's about 31% of income, close to the usual bank test. Owners outright
@@ -128,9 +128,9 @@
       <li><b>Checked, not fitted</b>: estates passed down come to about $9,200 per household a year
         in the model, about 1.7× the PC's HILDA-based estimate for 2018 ($5,300). It runs high
         because there is no surviving spouse, aged care or other heirs. The model has too few
-        owners under 35, and its two lowest rows never buy.</li>
+        owners under 35. Its lowest row never buys, and since 2021 the next row up buys only with an inheritance, at about 65.</li>
       <li><b>Assumptions</b>: each child is 25 years younger than their parent, in the same row.
-        Everyone dies at 90 and spends their savings down from 65. There is no super, shares or
+        Everyone dies at 90 and spends their savings down from 65. Gifts come out of the parent's income, not their savings. There is no super, shares or
         investment property.</li>
     </ul>
     <p>Full method, every source table and the checks:
@@ -146,40 +146,48 @@
   const pct = (x) => `${Math.round(100 * x)}%`;
   const $ = (id) => document.getElementById(id);
   const scrub = $('scrub'), play = $('play');
-  let scrubbing = false;
+  const SPEEDS = [0.5, 1, 2, 4, 8];
+  let dragging = false;
 
   function show(year) {
-    const s = anim.sim.stats[year - START];
-    $('year').textContent = year;
+    const s = anim.sim.stats[Math.max(SHOW_FROM, Math.min(END, year)) - START];
+    $('year').textContent = s.year;
     $('nowPrice').textContent = money(s.price);
     $('nowYoung').textContent = pct(s.youngOwn / s.young);
     $('nowOld').textContent = pct(s.homesOld / s.homes);
-    if (!scrubbing) scrub.value = year;
+    if (!dragging) scrub.value = s.year;
   }
   const anim = startLifetimes($('stage'), $('chart'), { onYear: show });
 
+  // URL parameters: ignored unless valid.
   const params = new URLSearchParams(location.search);
-  if (params.has('year')) anim.seek(Number(params.get('year')));
+  const startYear = Number(params.get('year'));
+  if (params.has('year') && Number.isFinite(startYear)) anim.seek(startYear);
   show(Math.floor(anim.year()));
 
+  let playing = true;
   function setPlaying(on) {
     if (on && anim.ended()) anim.seek(SHOW_FROM);
-    anim.setPaused(!on);
-    play.setAttribute('aria-pressed', String(on));
+    playing = on;
+    anim.setPaused(!on || dragging);
     play.textContent = on ? 'Pause' : 'Play';
   }
-  play.addEventListener('click', () => setPlaying(play.getAttribute('aria-pressed') !== 'true'));
+  play.addEventListener('click', () => setPlaying(!playing));
   $('restart').addEventListener('click', () => { anim.seek(SHOW_FROM); setPlaying(true); });
-  scrub.addEventListener('input', () => { scrubbing = true; anim.seek(Number(scrub.value)); scrubbing = false; });
+  // While the slider is held, the clock stops so it doesn't fight the pointer.
+  scrub.addEventListener('pointerdown', () => { dragging = true; anim.setPaused(true); });
+  const release = () => { if (dragging) { dragging = false; anim.setPaused(!playing); } };
+  scrub.addEventListener('pointerup', release);
+  scrub.addEventListener('pointercancel', release);
+  scrub.addEventListener('input', () => anim.seek(Number(scrub.value)));
   (function watch() {
-    if (anim.ended() && play.getAttribute('aria-pressed') === 'true') {
-      play.setAttribute('aria-pressed', 'false'); play.textContent = 'Play';
-    }
+    if (anim.ended() && playing) setPlaying(false);
     requestAnimationFrame(watch);
   })();
 
   const speeds = [...document.querySelectorAll('[data-speed]')];
   function setSpeed(v) {
+    if (!SPEEDS.includes(v)) return;
     anim.setSpeed(v);
     for (const b of speeds) b.setAttribute('aria-pressed', String(Number(b.dataset.speed) === v));
   }
