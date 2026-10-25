@@ -32,6 +32,9 @@
   button { background: transparent; color: var(--fg); border: 1px solid rgba(255,255,255,0.2);
     border-radius: 6px; padding: 5px 12px; font: inherit; cursor: pointer; }
   button[aria-pressed=true] { border-color: var(--gold); color: var(--gold); }
+  .speed { display: inline-flex; align-items: center; gap: 4px; }
+  .speed button { padding: 5px 9px; min-width: 32px; }
+  .speed .unit { color: var(--muted); font-size: 13px; }
   .readout { color: var(--muted); }
   .readout b { color: var(--fg); font-weight: 600; }
   .legend { display: flex; flex-wrap: wrap; gap: 6px 20px; color: var(--muted);
@@ -49,7 +52,7 @@
     <h1>Passing it back</h1>
     <p>Each dot is a household, ageing left to right from 20 to 90. Its size is its net worth.
       Rows are wealth deciles for households of the same age, richest at the top. Parents pass
-      <span class="gold">✦ gifts</span> and <span class="rose">✦ inheritances</span> to their
+      <span class="gold">● gifts</span> and <span class="rose">● inheritances</span> to their
       adult children at the rates, ages and amounts Australians reported. Tighten the squeeze and
       watch which rows can still afford to give.</p>
   </header>
@@ -61,6 +64,10 @@
     </label>
     <button id="auto" aria-pressed="false">Tighten slowly</button>
     <button id="pause" aria-pressed="false">Pause</button>
+    <span class="speed" role="group" aria-label="Speed">Speed
+      <button data-speed="0.25" aria-pressed="false">¼</button><button data-speed="0.5" aria-pressed="false">½</button><button data-speed="1" aria-pressed="true">1</button><button data-speed="2" aria-pressed="false">2</button><button data-speed="4" aria-pressed="false">4</button>
+      <span class="unit">years/s</span>
+    </span>
     <span class="readout">Gifts lost to the squeeze: <b id="lost">0%</b> of their value</span>
   </div>
   <div class="legend">
@@ -90,7 +97,7 @@
         only out of the cash left once they're covered. The gift is scaled by 1 − cost ÷ the
         average cash in the bank for the parent's wealth quintile (ABS: about $9k for the bottom
         fifth, $233k for the top). Inheritances are left unchanged.</li>
-      <li>One second is one year. The grid is 240 households, so every dot stands for about
+      <li>At speed 1, one second is one year. The grid is 240 households, so every dot stands for about
         40,000 real ones. Every age has the same number of dots.</li>
     </ul>
     <p>Full method, every source table and the validation checks:
@@ -112,6 +119,14 @@
 
   const params = new URLSearchParams(location.search);
   if (params.has('shock')) slider.value = params.get('shock');
+
+  const speeds = [...document.querySelectorAll('[data-speed]')];
+  function setSpeed(v) {
+    anim.setSpeed(v);
+    for (const b of speeds) b.setAttribute('aria-pressed', String(Number(b.dataset.speed) === v));
+  }
+  for (const b of speeds) b.addEventListener('click', () => setSpeed(Number(b.dataset.speed)));
+  if (params.has('speed')) setSpeed(Number(params.get('speed')));
 
   function apply() {
     const v = Number(slider.value);

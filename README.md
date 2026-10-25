@@ -21,7 +21,7 @@ bottom fifth, $233k for the top), the lower rows stop giving first. The
 gauge shows what parents in each row pass back each year, and the dashed
 part is what the squeeze took.
 
-`?shock=20000` starts with a $20k squeeze.
+`?shock=20000` starts with a $20k squeeze; `?speed=4` at 4 years a second (¼ to 4).
 
 ## Grounding
 

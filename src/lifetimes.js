@@ -12,9 +12,11 @@ import {
 } from './data.js';
 
 const PER_ROW = 24;
-const YEARS_PER_SECOND = 1;
 const SPAN = AGE_MAX - AGE_MIN;
-const FLIGHT_S = 1.5;
+// A transfer takes about a year of animation time to arrive, within these
+// bounds in real seconds.
+const FLIGHT_YEARS = 1.2;
+const FLIGHT_MIN_S = 0.35, FLIGHT_MAX_S = 1.5;
 const WARMUP_YEARS = SPAN;
 const COLORS = { gift: [255, 211, 110], inheritance: [255, 150, 170] };
 
@@ -28,9 +30,10 @@ export function startLifetimes(canvas) {
     Array.from({ length: PER_ROW }, (_, i) => ({ slot: i / PER_ROW, received: 0, flash: 0 })));
   const dots = rows.flat().length;
   let phase = 0;
-  let sparkles = [];
+  let motes = [];
   let fizzles = [];
   let shock = 0;
+  let speed = 1; // years per second
   let expected = expectedGivenByRow(0);
   const baseline = expectedGivenByRow(0);
   const due = { gift: rand(), inheritance: rand() };
@@ -84,13 +87,14 @@ export function startLifetimes(canvas) {
       tally.given += amount;
     }
     if (instant) { to.received += amount; return; }
-    sparkles.push({ kind, amount, from, to, fromRow: t.fromRow, toRow: t.row, t: 0,
-      spin: rand() * Math.PI, lift: 0.5 + rand() });
+    motes.push({ kind, amount, from, to, fromRow: t.fromRow, toRow: t.row, t: 0,
+      bow: rand() * 2 - 1 });
   }
 
   function step(dt, instant = false) {
     const prev = phase;
-    phase = (phase + (dt * YEARS_PER_SECOND) / SPAN) % 1;
+    const years = dt * (instant ? 1 : speed);
+    phase = (phase + years / SPAN) % 1;
     for (const row of rows) {
       for (const d of row) {
         // A dot that wraps from 90 back to 20 is a new household.
@@ -99,50 +103,42 @@ export function startLifetimes(canvas) {
       }
     }
     for (const [kind, k] of Object.entries(KINDS)) {
-      due[kind] += k.perHousehold * dots * dt * YEARS_PER_SECOND;
+      due[kind] += k.perHousehold * dots * years;
       while (due[kind] >= 1) { due[kind] -= 1; spawn(kind, instant); }
     }
     const kept = [];
-    for (const s of sparkles) {
-      s.t += dt / FLIGHT_S;
+    for (const s of motes) {
+      s.t += dt / Math.min(FLIGHT_MAX_S, Math.max(FLIGHT_MIN_S, FLIGHT_YEARS / speed));
       if (s.t >= 1) { s.to.received += s.amount; s.to.flash = 1; } else kept.push(s);
     }
-    sparkles = kept;
+    motes = kept;
     fizzles = fizzles.filter((f) => (f.t += dt / 1.2) < 1);
     const decay = Math.exp(-dt / 8);
     tally.given *= decay; tally.lost *= decay;
   }
 
-  function sparklePos(s) {
+  function motePos(s) {
     const x0 = xOfAge(ageOf(s.from)), y0 = yOfRow(s.fromRow);
     const x1 = xOfAge(ageOf(s.to)), y1 = yOfRow(s.toRow);
     const u = s.t * s.t * (3 - 2 * s.t);
-    const lift = Math.min(layout.rowH * 1.2, Math.abs(x1 - x0) * 0.18) * s.lift;
-    return [x0 + (x1 - x0) * u, y0 + (y1 - y0) * u - Math.sin(Math.PI * u) * lift];
+    // A slight bow, up or down, so paths between the same rows don't overlap.
+    const bow = Math.min(layout.rowH * 0.3, Math.abs(x1 - x0) * 0.04) * s.bow;
+    return [x0 + (x1 - x0) * u, y0 + (y1 - y0) * u - Math.sin(Math.PI * u) * bow];
   }
 
-  function drawStar(x, y, size, rot, alpha, [r, g, b]) {
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate(rot);
+  function drawMote(x, y, size, alpha, [r, g, b]) {
     ctx.globalAlpha = alpha;
-    const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, size * 2.2);
-    glow.addColorStop(0, `rgba(${r},${g},${b},0.5)`);
+    const glow = ctx.createRadialGradient(x, y, 0, x, y, size * 2);
+    glow.addColorStop(0, `rgba(${r},${g},${b},0.45)`);
     glow.addColorStop(1, `rgba(${r},${g},${b},0)`);
     ctx.fillStyle = glow;
-    ctx.beginPath(); ctx.arc(0, 0, size * 2.2, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = `rgb(${Math.min(255, r + 40)},${Math.min(255, g + 40)},${Math.min(255, b + 40)})`;
-    ctx.beginPath();
-    for (let i = 0; i < 8; i++) {
-      const rr = i % 2 === 0 ? size : size * 0.28;
-      const a = (i * Math.PI) / 4;
-      ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
-    }
-    ctx.closePath(); ctx.fill();
-    ctx.restore();
+    ctx.beginPath(); ctx.arc(x, y, size * 2, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = `rgb(${r},${g},${b})`;
+    ctx.beginPath(); ctx.arc(x, y, size, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
   }
 
-  function draw(time) {
+  function draw() {
     const { left, right, top, bottom, rowH, narrow, plotW } = layout;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, W, H);
@@ -212,14 +208,13 @@ export function startLifetimes(canvas) {
     }
 
     ctx.globalCompositeOperation = 'lighter';
-    for (const s of sparkles) {
-      const [x, y] = sparklePos(s);
-      // $500 to $300k spans a fifth to a half of a top dot's radius.
+    for (const s of motes) {
+      const [x, y] = motePos(s);
+      // $500 to $300k spans a tenth to a quarter of a top dot's radius.
       const u = Math.max(0, Math.min(1, Math.log10(s.amount / 500) / Math.log10(600)));
-      const size = Math.max(2, maxRadius() * (0.2 + 0.3 * u));
-      const twinkle = 0.75 + 0.25 * Math.sin(time * 0.012 + s.spin * 7);
+      const size = Math.max(1.5, maxRadius() * (0.1 + 0.15 * u));
       const fade = Math.min(1, s.t * 6, (1 - s.t) * 6);
-      drawStar(x, y, size, s.spin + time * 0.003, twinkle * fade, COLORS[s.kind]);
+      drawMote(x, y, size, fade, COLORS[s.kind]);
     }
     ctx.globalCompositeOperation = 'source-over';
 
@@ -258,10 +253,12 @@ export function startLifetimes(canvas) {
   let last = performance.now();
   let paused = false;
   function frame(now) {
-    const dt = Math.min(0.05, (now - last) / 1000);
+    // rAF stamps can precede the performance.now() taken at setup: a negative
+    // step would look like every dot wrapping round and wipe the warm-up.
+    const dt = Math.min(0.05, Math.max(0, (now - last) / 1000));
     last = now;
     if (!paused) step(dt);
-    draw(now);
+    draw();
     requestAnimationFrame(frame);
   }
 
@@ -275,6 +272,7 @@ export function startLifetimes(canvas) {
   return {
     setShock(v) { shock = v; expected = expectedGivenByRow(v); },
     setPaused(p) { paused = p; },
+    setSpeed(v) { speed = v; },
     giftsLostShare() {
       const t = tally.given + tally.lost;
       return t > 0 ? tally.lost / t : 0;
