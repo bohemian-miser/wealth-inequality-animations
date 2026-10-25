@@ -1,40 +1,40 @@
-// Animation 1: lifetimes. A grid of households, one row per wealth decile
-// (richest at the top), drifting left to right as they age from 20 to 90.
-// A dot's area is its wealth. Older households with something to spare pass
-// sparkles of it back to younger ones in their own row; turn up the squeeze
-// and the lower rows run out of spare first.
+// Animation 1: passing it back. A grid of households, one row per wealth
+// decile within their age (richest at the top), drifting left to right as
+// they age from 20 to 90. A dot's area is its net worth (ABS 2019-20).
+// Gifts and inheritances fly from parents to children at the rates, ages,
+// amounts and wealth quintiles the Productivity Commission measured; each
+// child's gold core is what they have received so far. The squeeze adds a
+// yearly cost that parents must cover before they can gift.
 
 import {
-  AGE_MIN, AGE_MAX, DECILE_LABELS, GIVE_FROM_AGE, RECEIVE_AGES,
-  baseWealth, needToKeep, money,
+  AGE_MIN, AGE_MAX, ROWS, ROW_LABELS, KINDS,
+  wealthAt, drawTransfer, giftFactor, expectedGivenByRow, money,
 } from './data.js';
 
-const ROWS = 10;
 const PER_ROW = 24;
 const YEARS_PER_SECOND = 1;
 const SPAN = AGE_MAX - AGE_MIN;
-const GIVE_SHARE = 0.03; // of the surplus, per sparkle
-const SPARKLE_RATE = 0.9; // sparkles per second from a full-surplus giver
-const SURPLUS_FULL = 300e3; // surplus at which a giver hits that rate
-const FLIGHT_S = 1.6;
-const FLOW_SMOOTH_S = 6;
+const FLIGHT_S = 1.5;
+const WARMUP_YEARS = SPAN;
+const COLORS = { gift: [255, 211, 110], inheritance: [255, 150, 170] };
 
-export function startLifetimes(canvas, controls) {
+export function startLifetimes(canvas) {
   const ctx = canvas.getContext('2d');
+  const rand = Math.random;
   let W = 0, H = 0, dpr = 1;
   let layout;
 
-  const rows = [];
-  for (let r = 0; r < ROWS; r++) {
-    const dots = [];
-    for (let i = 0; i < PER_ROW; i++) {
-      dots.push({ slot: i / PER_ROW, bonus: 0, emit: Math.random(), flash: 0 });
-    }
-    rows.push({ dots, flow: 0, arrived: 0 });
-  }
+  const rows = Array.from({ length: ROWS }, () =>
+    Array.from({ length: PER_ROW }, (_, i) => ({ slot: i / PER_ROW, received: 0, flash: 0 })));
+  const dots = rows.flat().length;
   let phase = 0;
   let sparkles = [];
-  let squeeze = 0;
+  let fizzles = [];
+  let shock = 0;
+  let expected = expectedGivenByRow(0);
+  const baseline = expectedGivenByRow(0);
+  const due = { gift: rand(), inheritance: rand() };
+  const tally = { given: 0, lost: 0 };
 
   function resize() {
     dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -43,8 +43,8 @@ export function startLifetimes(canvas, controls) {
     canvas.width = Math.round(W * dpr);
     canvas.height = Math.round(H * dpr);
     const narrow = W < 640;
-    const left = narrow ? 64 : 96;
-    const right = narrow ? 70 : 150;
+    const left = narrow ? 52 : 92;
+    const right = narrow ? 64 : 170;
     const top = 30, bottom = 40;
     const rowH = (H - top - bottom) / ROWS;
     layout = { left, right, top, bottom, rowH, narrow, plotW: W - left - right };
@@ -52,132 +52,115 @@ export function startLifetimes(canvas, controls) {
 
   const ageOf = (dot) => AGE_MIN + ((phase + dot.slot) % 1) * SPAN;
   const xOfAge = (age) => layout.left + ((age - AGE_MIN) / SPAN) * layout.plotW;
-  // Row 0 is the bottom decile, drawn lowest.
   const yOfRow = (r) => layout.top + (ROWS - 1 - r + 0.5) * layout.rowH;
-  const wealthOf = (r, dot) => Math.max(1e3, baseWealth(r, ageOf(dot)) + dot.bonus);
 
-  function maxRadius() {
-    return Math.min(layout.rowH * 0.55, (layout.plotW / PER_ROW) * 0.62);
+  const maxWealth = Math.max(...Array.from({ length: 71 }, (_, i) => wealthAt(ROWS - 1, AGE_MIN + i)));
+  const maxRadius = () => Math.min(layout.rowH * 0.6, (layout.plotW / PER_ROW) * 0.62);
+  const radius = (w) => maxRadius() * Math.sqrt(Math.abs(w) / maxWealth);
+
+  function nearest(row, age) {
+    let best = null, gap = Infinity;
+    for (const d of rows[row]) {
+      const g = Math.abs(ageOf(d) - age);
+      if (g < gap) { gap = g; best = d; }
+    }
+    return best;
   }
 
-  function radius(w) {
-    // Area ∝ wealth, scaled so the richest dot fills most of its row.
-    const maxW = baseWealth(ROWS - 1, 72) * 1.15;
-    return Math.max(1.3, maxRadius() * Math.sqrt(w / maxW));
+  function spawn(kind, instant) {
+    const t = drawTransfer(kind, rand);
+    const to = nearest(t.row, t.age);
+    const from = nearest(t.fromRow, t.fromAge);
+    let amount = t.amount;
+    if (kind === 'gift') {
+      const f = giftFactor(t.fromRow, shock);
+      if (f <= 0) {
+        tally.lost += t.amount;
+        if (!instant) fizzles.push({ row: t.fromRow, from, t: 0 });
+        return;
+      }
+      tally.lost += amount * (1 - f);
+      amount *= f;
+      tally.given += amount;
+    }
+    if (instant) { to.received += amount; return; }
+    sparkles.push({ kind, amount, from, to, fromRow: t.fromRow, toRow: t.row, t: 0,
+      spin: rand() * Math.PI, lift: 0.5 + rand() });
   }
 
-  function step(dt) {
-    const prevPhase = phase;
+  function step(dt, instant = false) {
+    const prev = phase;
     phase = (phase + (dt * YEARS_PER_SECOND) / SPAN) % 1;
-    const need = needToKeep(squeeze);
-
-    for (let r = 0; r < ROWS; r++) {
-      const row = rows[r];
-      for (const dot of row.dots) {
+    for (const row of rows) {
+      for (const d of row) {
         // A dot that wraps from 90 back to 20 is a new household.
-        const before = (prevPhase + dot.slot) % 1;
-        const after = (phase + dot.slot) % 1;
-        if (after < before) { dot.bonus = 0; dot.emit = Math.random(); }
-        dot.flash = Math.max(0, dot.flash - dt * 2.5);
-
-        const age = ageOf(dot);
-        if (age < GIVE_FROM_AGE) continue;
-        const surplus = wealthOf(r, dot) - need;
-        if (surplus <= 0) continue;
-        dot.emit += dt * SPARKLE_RATE * Math.sqrt(Math.min(1, surplus / SURPLUS_FULL));
-        if (dot.emit < 1) continue;
-        dot.emit -= 1;
-        const target = pickReceiver(row);
-        if (!target) continue;
-        const amount = surplus * GIVE_SHARE;
-        dot.bonus -= amount;
-        sparkles.push({ row: r, from: dot, to: target, amount, t: 0,
-          spin: Math.random() * Math.PI, lift: 0.6 + Math.random() * 0.8 });
+        if ((phase + d.slot) % 1 < (prev + d.slot) % 1) d.received = 0;
+        d.flash = Math.max(0, d.flash - dt * 2.5);
       }
     }
-
+    for (const [kind, k] of Object.entries(KINDS)) {
+      due[kind] += k.perHousehold * dots * dt * YEARS_PER_SECOND;
+      while (due[kind] >= 1) { due[kind] -= 1; spawn(kind, instant); }
+    }
     const kept = [];
     for (const s of sparkles) {
       s.t += dt / FLIGHT_S;
-      if (s.t >= 1) {
-        s.to.bonus += s.amount;
-        s.to.flash = 1;
-        rows[s.row].arrived += s.amount;
-      } else kept.push(s);
+      if (s.t >= 1) { s.to.received += s.amount; s.to.flash = 1; } else kept.push(s);
     }
     sparkles = kept;
-
-    const k = 1 - Math.exp(-dt / FLOW_SMOOTH_S);
-    for (const row of rows) {
-      const perYear = row.arrived / (dt * YEARS_PER_SECOND || 1);
-      row.flow += (perYear - row.flow) * k;
-      row.arrived = 0;
-    }
-  }
-
-  function pickReceiver(row) {
-    const pool = row.dots.filter((d) => {
-      const a = ageOf(d);
-      return a >= RECEIVE_AGES[0] && a <= RECEIVE_AGES[1];
-    });
-    return pool.length ? pool[(Math.random() * pool.length) | 0] : null;
+    fizzles = fizzles.filter((f) => (f.t += dt / 1.2) < 1);
+    const decay = Math.exp(-dt / 8);
+    tally.given *= decay; tally.lost *= decay;
   }
 
   function sparklePos(s) {
-    const x0 = xOfAge(ageOf(s.from)), x1 = xOfAge(ageOf(s.to));
-    const y = yOfRow(s.row);
+    const x0 = xOfAge(ageOf(s.from)), y0 = yOfRow(s.fromRow);
+    const x1 = xOfAge(ageOf(s.to)), y1 = yOfRow(s.toRow);
     const u = s.t * s.t * (3 - 2 * s.t);
-    const x = x0 + (x1 - x0) * u;
-    const arc = Math.min(layout.rowH * 0.42, Math.abs(x1 - x0) * 0.2) * s.lift;
-    return [x, y - Math.sin(Math.PI * u) * arc];
+    const lift = Math.min(layout.rowH * 1.2, Math.abs(x1 - x0) * 0.18) * s.lift;
+    return [x0 + (x1 - x0) * u, y0 + (y1 - y0) * u - Math.sin(Math.PI * u) * lift];
   }
 
-  function drawStar(x, y, size, rot, alpha) {
+  function drawStar(x, y, size, rot, alpha, [r, g, b]) {
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(rot);
     ctx.globalAlpha = alpha;
     const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, size * 2.2);
-    glow.addColorStop(0, 'rgba(255, 220, 120, 0.55)');
-    glow.addColorStop(1, 'rgba(255, 200, 80, 0)');
+    glow.addColorStop(0, `rgba(${r},${g},${b},0.5)`);
+    glow.addColorStop(1, `rgba(${r},${g},${b},0)`);
     ctx.fillStyle = glow;
     ctx.beginPath(); ctx.arc(0, 0, size * 2.2, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#fff4c8';
+    ctx.fillStyle = `rgb(${Math.min(255, r + 40)},${Math.min(255, g + 40)},${Math.min(255, b + 40)})`;
     ctx.beginPath();
     for (let i = 0; i < 8; i++) {
-      const r = i % 2 === 0 ? size : size * 0.28;
+      const rr = i % 2 === 0 ? size : size * 0.28;
       const a = (i * Math.PI) / 4;
-      ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+      ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
     }
     ctx.closePath(); ctx.fill();
     ctx.restore();
   }
 
   function draw(time) {
-    const { left, right, top, bottom, rowH, narrow } = layout;
+    const { left, right, top, bottom, rowH, narrow, plotW } = layout;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, W, H);
-
-    // Row bands and labels.
     ctx.font = `${narrow ? 10 : 12}px system-ui, sans-serif`;
     ctx.textBaseline = 'middle';
+
     for (let r = 0; r < ROWS; r++) {
       const y = yOfRow(r);
       if (r % 2 === 1) {
         ctx.fillStyle = 'rgba(255,255,255,0.025)';
-        ctx.fillRect(left, y - rowH / 2, layout.plotW, rowH);
+        ctx.fillRect(left, y - rowH / 2, plotW, rowH);
       }
       ctx.fillStyle = 'rgba(220,226,240,0.7)';
       ctx.textAlign = 'right';
-      ctx.fillText(narrow ? DECILE_LABELS[r].replace('Bottom ', '↓').replace('Top ', '↑') : DECILE_LABELS[r], left - 10, y);
+      const label = narrow ? ROW_LABELS[r].replace('Bottom ', '↓').replace('Top ', '↑') : ROW_LABELS[r];
+      ctx.fillText(label, left - 10, y);
     }
 
-    // The giving zone.
-    const gx = xOfAge(GIVE_FROM_AGE);
-    ctx.fillStyle = 'rgba(255, 210, 110, 0.035)';
-    ctx.fillRect(gx, top, left + layout.plotW - gx, rowH * ROWS);
-
-    // Age axis.
     ctx.textAlign = 'center';
     ctx.fillStyle = 'rgba(220,226,240,0.55)';
     for (let a = AGE_MIN; a <= AGE_MAX; a += 10) {
@@ -185,61 +168,89 @@ export function startLifetimes(canvas, controls) {
       ctx.fillRect(x, H - bottom + 2, 1, 5);
       ctx.fillText(String(a), x, H - bottom + 18);
     }
-    ctx.fillText('age →', left + layout.plotW / 2, H - 8);
+    ctx.fillText('age →', left + plotW / 2, H - 8);
 
-    // Dots.
+    const minR = 1.3;
     for (let r = 0; r < ROWS; r++) {
       const y = yOfRow(r);
-      for (const dot of rows[r].dots) {
-        const age = ageOf(dot);
+      for (const d of rows[r]) {
+        const age = ageOf(d);
         const x = xOfAge(age);
-        const w = wealthOf(r, dot);
-        const rad = radius(w);
-        // Fade in at 20, out at 90.
-        const edge = Math.min(1, (age - AGE_MIN) / 2, (AGE_MAX - age) / 2);
-        const helped = Math.max(0, Math.min(1, dot.bonus / Math.max(w, 1)));
-        const cr = 150 + 105 * helped, cg = 180 + 30 * helped, cb = 255 - 140 * helped;
-        ctx.globalAlpha = Math.max(0, edge);
-        ctx.fillStyle = `rgb(${cr | 0},${cg | 0},${cb | 0})`;
-        ctx.beginPath(); ctx.arc(x, y, rad, 0, Math.PI * 2); ctx.fill();
-        if (dot.flash > 0) {
-          ctx.strokeStyle = `rgba(255,230,150,${dot.flash * 0.9})`;
+        const w = wealthAt(r, age);
+        const rad = Math.max(minR, radius(w));
+        ctx.globalAlpha = Math.max(0, Math.min(1, (age - AGE_MIN) / 2, (AGE_MAX - age) / 2));
+        if (w >= 0) {
+          ctx.fillStyle = 'rgb(150,180,255)';
+          ctx.beginPath(); ctx.arc(x, y, rad, 0, Math.PI * 2); ctx.fill();
+        } else {
+          // Negative net worth: owes more than it owns.
+          ctx.strokeStyle = 'rgb(150,180,255)';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([2, 2]);
+          ctx.beginPath(); ctx.arc(x, y, rad, 0, Math.PI * 2); ctx.stroke();
+          ctx.setLineDash([]);
+        }
+        if (d.received > 0) {
+          ctx.fillStyle = 'rgb(255,211,110)';
+          ctx.beginPath(); ctx.arc(x, y, Math.min(rad, Math.max(1, radius(d.received))), 0, Math.PI * 2); ctx.fill();
+        }
+        if (d.flash > 0) {
+          ctx.strokeStyle = `rgba(255,230,150,${d.flash * 0.8})`;
           ctx.lineWidth = 1.5;
-          ctx.beginPath(); ctx.arc(x, y, rad + 3 + (1 - dot.flash) * 6, 0, Math.PI * 2); ctx.stroke();
+          ctx.beginPath(); ctx.arc(x, y, rad + 3 + (1 - d.flash) * 6, 0, Math.PI * 2); ctx.stroke();
         }
       }
     }
     ctx.globalAlpha = 1;
 
-    // Sparkles, additive.
+    // Gifts that couldn't be afforded: a grey puff at the parent.
+    for (const f of fizzles) {
+      const x = xOfAge(ageOf(f.from)), y = yOfRow(f.row);
+      ctx.strokeStyle = `rgba(170,175,190,${0.7 * (1 - f.t)})`;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.arc(x, y, 4 + f.t * 12, 0, Math.PI * 2); ctx.stroke();
+    }
+
     ctx.globalCompositeOperation = 'lighter';
     for (const s of sparkles) {
       const [x, y] = sparklePos(s);
-      // $100 gifts to $200k gifts span a third to the whole of a top dot's radius.
-      const u = Math.max(0, Math.min(1, Math.log10(s.amount / 100) / 3.3));
-      const size = maxRadius() * (0.18 + 0.27 * u);
+      // $500 to $300k spans a fifth to a half of a top dot's radius.
+      const u = Math.max(0, Math.min(1, Math.log10(s.amount / 500) / Math.log10(600)));
+      const size = Math.max(2, maxRadius() * (0.2 + 0.3 * u));
       const twinkle = 0.75 + 0.25 * Math.sin(time * 0.012 + s.spin * 7);
       const fade = Math.min(1, s.t * 6, (1 - s.t) * 6);
-      drawStar(x, y, size, s.spin + time * 0.003, twinkle * fade);
+      drawStar(x, y, size, s.spin + time * 0.003, twinkle * fade, COLORS[s.kind]);
     }
     ctx.globalCompositeOperation = 'source-over';
 
-    // Flow gauge: how much each row passes back, log scale $100-$1M a year.
-    const gx0 = W - right + 14, gw = right - (narrow ? 22 : 64);
+    // Gauge: expected dollars passed back per household per year by parents in each row.
+    const gx0 = W - right + 12, gw = right - (narrow ? 18 : 70);
+    const scale = Math.max(...baseline.map((e) => e.gift + e.inheritance)) * 1.05;
     ctx.textAlign = 'left';
-    ctx.fillStyle = 'rgba(220,226,240,0.55)';
-    if (!narrow) ctx.fillText('passed back / yr', gx0, top - 10);
+    if (!narrow) {
+      ctx.fillStyle = 'rgba(220,226,240,0.55)';
+      ctx.fillText('parents pass back / yr', gx0, top - 12);
+    }
     for (let r = 0; r < ROWS; r++) {
       const y = yOfRow(r);
-      const f = rows[r].flow;
-      const u = f < 100 ? 0 : Math.min(1, Math.log10(f / 100) / 4);
+      const e = expected[r];
+      const wi = (gw * e.inheritance) / scale, wg = (gw * e.gift) / scale;
+      const wg0 = (gw * baseline[r].gift) / scale;
       ctx.fillStyle = 'rgba(255,255,255,0.06)';
-      ctx.fillRect(gx0, y - 4, gw, 8);
-      ctx.fillStyle = '#ffd36e';
-      ctx.fillRect(gx0, y - 4, gw * u, 8);
+      ctx.fillRect(gx0, y - 5, gw, 10);
+      ctx.fillStyle = 'rgb(255,150,170)';
+      ctx.fillRect(gx0, y - 5, wi, 10);
+      ctx.fillStyle = 'rgb(255,211,110)';
+      ctx.fillRect(gx0 + wi, y - 5, wg, 10);
+      if (wg0 - wg > 0.5) {
+        ctx.strokeStyle = 'rgba(255,211,110,0.6)';
+        ctx.setLineDash([2, 2]);
+        ctx.strokeRect(gx0 + wi + wg, y - 5, wg0 - wg, 10);
+        ctx.setLineDash([]);
+      }
       if (!narrow) {
-        ctx.fillStyle = 'rgba(220,226,240,0.75)';
-        ctx.fillText(f < 100 ? '—' : money(f), gx0 + gw + 6, y);
+        ctx.fillStyle = 'rgba(220,226,240,0.8)';
+        ctx.fillText(money(e.gift + e.inheritance), gx0 + gw + 6, y);
       }
     }
   }
@@ -256,11 +267,17 @@ export function startLifetimes(canvas, controls) {
 
   window.addEventListener('resize', resize);
   resize();
+  // Run a lifetime first so every dot has had its share already.
+  for (let t = 0; t < WARMUP_YEARS; t += 0.1) step(0.1, true);
+  tally.given = tally.lost = 0;
   requestAnimationFrame(frame);
 
   return {
-    setSqueeze(v) { squeeze = v; },
+    setShock(v) { shock = v; expected = expectedGivenByRow(v); },
     setPaused(p) { paused = p; },
-    need: () => needToKeep(squeeze),
+    giftsLostShare() {
+      const t = tally.given + tally.lost;
+      return t > 0 ? tally.lost / t : 0;
+    },
   };
 }

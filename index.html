@@ -4,85 +4,128 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Passing It Back</title>
+<meta name="description" content="Australian household wealth by age and decile, and the gifts and inheritances that pass between generations, animated from ABS and Productivity Commission data.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path d='M8 0l2 6 6 2-6 2-2 6-2-6-6-2 6-2z' fill='%23ffd36e'/></svg>">
 <style>
   :root {
     --bg: #0d1020;
     --fg: #e6e9f4;
     --muted: #9aa3bf;
     --gold: #ffd36e;
+    --rose: #ff96aa;
+    --blue: #96b4ff;
     --panel: rgba(255, 255, 255, 0.05);
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
-    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  body { display: flex; flex-direction: column; }
-  header { padding: 16px 16px 4px; max-width: 980px; }
+  html, body { margin: 0; background: var(--bg); color: var(--fg);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header, .controls, .legend, section { padding-left: 16px; padding-right: 16px; }
+  header { padding-top: 16px; max-width: 980px; }
   h1 { margin: 0 0 4px; font-size: 22px; font-weight: 650; }
   header p { margin: 0; color: var(--muted); }
-  .gold { color: var(--gold); }
-  canvas { flex: 1; width: 100%; min-height: 380px; display: block; }
-  .controls { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center;
-    padding: 10px 16px; background: var(--panel); }
-  .controls label { display: flex; align-items: center; gap: 10px; }
-  input[type=range] { width: min(320px, 60vw); accent-color: var(--gold); }
+  .gold { color: var(--gold); } .rose { color: var(--rose); }
+  canvas { width: 100%; height: min(72vh, 640px); min-height: 400px; display: block; }
+  .controls { display: flex; flex-wrap: wrap; gap: 10px 24px; align-items: center;
+    padding-top: 10px; padding-bottom: 10px; background: var(--panel); }
+  .controls label { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  input[type=range] { width: min(300px, 70vw); accent-color: var(--gold); }
   button { background: transparent; color: var(--fg); border: 1px solid rgba(255,255,255,0.2);
     border-radius: 6px; padding: 5px 12px; font: inherit; cursor: pointer; }
   button[aria-pressed=true] { border-color: var(--gold); color: var(--gold); }
   .readout { color: var(--muted); }
   .readout b { color: var(--fg); font-weight: 600; }
-  footer { padding: 8px 16px 14px; color: var(--muted); font-size: 12px; }
-  footer a { color: var(--muted); }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 20px; color: var(--muted);
+    font-size: 13px; padding-top: 10px; }
+  .sw { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px;
+    vertical-align: -1px; }
+  section { max-width: 820px; padding-top: 18px; padding-bottom: 28px; color: var(--muted); font-size: 14px; }
+  section h2 { color: var(--fg); font-size: 16px; margin: 18px 0 6px; }
+  section a { color: var(--fg); }
+  section li { margin: 4px 0; }
 </style>
 </head>
 <body>
   <header>
     <h1>Passing it back</h1>
-    <p>Each dot is a household, ageing left to right from 20 to 90; its size is its wealth.
-      Rows are wealth deciles, richest at the top. Older households with something to spare
-      pass <span class="gold">✦ sparkles</span> of it back to younger ones in their row.
-      Tighten the squeeze and watch who can still afford to.</p>
+    <p>Each dot is a household, ageing left to right from 20 to 90. Its size is its net worth.
+      Rows are wealth deciles for households of the same age, richest at the top. Parents pass
+      <span class="gold">✦ gifts</span> and <span class="rose">✦ inheritances</span> to their
+      adult children at the rates, ages and amounts Australians reported. Tighten the squeeze and
+      watch which rows can still afford to give.</p>
   </header>
-  <canvas id="stage"></canvas>
+  <canvas id="stage" aria-label="Animated grid of households by age and wealth decile, with gifts and inheritances flying between them"></canvas>
   <div class="controls">
-    <label>Squeeze
-      <input id="squeeze" type="range" min="0" max="1" step="0.01" value="0">
+    <label>Squeeze: parents' extra costs a year
+      <input id="shock" type="range" min="0" max="40000" step="500" value="0">
+      <b id="shockValue">$0</b>
     </label>
     <button id="auto" aria-pressed="false">Tighten slowly</button>
     <button id="pause" aria-pressed="false">Pause</button>
-    <span class="readout">An older household keeps <b id="need">$25k</b> before it gives anything.</span>
+    <span class="readout">Gifts lost to the squeeze: <b id="lost">0%</b> of their value</span>
   </div>
-  <footer>
-    Illustrative model, calibrated to
-    <a href="https://www.unsw.edu.au/newsroom/news/2024/04/wealth-gap-widening-new-report-acoss">ACOSS &amp; UNSW, Inequality in Australia 2024</a>
-    (wealth by decile and age, ABS 2022-23) and the
-    <a href="https://www.pc.gov.au/inquiries-and-research/wealth-transfers">Productivity Commission, Wealth transfers and their economic effects (2021)</a>.
-    One second is one year.
-  </footer>
+  <div class="legend">
+    <span><span class="sw" style="background:var(--blue)"></span>net worth (area)</span>
+    <span><span class="sw" style="border:1px dashed var(--blue)"></span>negative net worth</span>
+    <span><span class="sw" style="background:var(--gold)"></span>core: received so far in life</span>
+    <span><span class="sw" style="border:1px solid #aab"></span>a gift the parent couldn't afford</span>
+    <span>bars: what parents in each row pass back a year, per household: <span class="rose">inheritances</span> + <span class="gold">gifts</span> (dashed: lost to the squeeze)</span>
+  </div>
+  <section>
+    <h2>What's real and what's assumed</h2>
+    <ul>
+      <li><b>Dot sizes</b> are mean net worth by age and decile. They come from the ABS
+        <i>Household Income and Wealth, Australia 2019-20</i>: each age band's mean and median,
+        and the national percentiles and quintile means. The model reproduces ABS's national
+        P10–P90 exactly, and each age band's mean to within a few percent (≤8%).</li>
+      <li><b>Gifts and inheritances</b> come from the Productivity Commission's <i>Wealth transfers
+        and their economic effects</i> (2021, HILDA data). That covers how many there are each
+        year, the recipient's age, the average amount at each age, which wealth quintiles receive
+        them, and how much each quintile gets. In dollars the top fifth receives about 5.5× what
+        the bottom fifth does. Relative to what they already have, the bottom fifth gains about
+        30× more.</li>
+      <li><b>Who gives</b>: a parent 30 years older than the child (an assumption). The parent's
+        decile is drawn to match the PC's measured link between parents' and children's
+        wealth, which is weak at 20 (0.09) and stronger from 40 (0.49).</li>
+      <li><b>The squeeze is a what-if</b>, not data. A parent facing extra yearly costs gives
+        only out of the cash left once they're covered. The gift is scaled by 1 − cost ÷ the
+        average cash in the bank for the parent's wealth quintile (ABS: about $9k for the bottom
+        fifth, $233k for the top). Inheritances are left unchanged.</li>
+      <li>One second is one year. The grid is 240 households, so every dot stands for about
+        40,000 real ones. Every age has the same number of dots.</li>
+    </ul>
+    <p>Full method, every source table and the validation checks:
+      <a href="https://github.com/bohemian-miser/wealth-inequality-animations">github.com/bohemian-miser/wealth-inequality-animations</a>
+      (<a href="https://github.com/bohemian-miser/wealth-inequality-animations/blob/main/data/SOURCES.md">sources</a>,
+      <a href="https://github.com/bohemian-miser/wealth-inequality-animations/blob/main/data/VALIDATION.md">validation</a>).</p>
+  </section>
 <script type="module">
   import { startLifetimes } from './src/lifetimes.js';
   import { money } from './src/data.js';
 
   const anim = startLifetimes(document.getElementById('stage'));
-  const slider = document.getElementById('squeeze');
-  const need = document.getElementById('need');
+  const slider = document.getElementById('shock');
+  const shockValue = document.getElementById('shockValue');
+  const lost = document.getElementById('lost');
   const auto = document.getElementById('auto');
   const pause = document.getElementById('pause');
+  const MAX = Number(slider.max);
 
   const params = new URLSearchParams(location.search);
-  if (params.has('squeeze')) slider.value = params.get('squeeze');
+  if (params.has('shock')) slider.value = params.get('shock');
 
   function apply() {
-    anim.setSqueeze(Number(slider.value));
-    need.textContent = money(anim.need());
+    const v = Number(slider.value);
+    anim.setShock(v);
+    shockValue.textContent = money(v);
   }
   slider.addEventListener('input', () => { setAuto(false); apply(); });
 
-  // Ramp the squeeze up over 60 s, hold, ease back, repeat.
+  // Ramp up over 60 s, hold 20 s, ease back over 20 s, repeat.
   let autoOn = false, autoStart = 0;
   function setAuto(on) {
     autoOn = on;
     auto.setAttribute('aria-pressed', String(on));
-    autoStart = performance.now() - Number(slider.value) * 60e3;
+    autoStart = performance.now() - (Number(slider.value) / MAX) * 60e3;
   }
   auto.addEventListener('click', () => setAuto(!autoOn));
   pause.addEventListener('click', () => {
@@ -94,10 +137,11 @@
   (function tick(now) {
     if (autoOn) {
       const t = ((now - autoStart) / 1000) % 100;
-      const v = t < 60 ? t / 60 : t < 80 ? 1 : 1 - (t - 80) / 20;
-      slider.value = v.toFixed(3);
+      const u = t < 60 ? t / 60 : t < 80 ? 1 : 1 - (t - 80) / 20;
+      slider.value = String(Math.round((u * MAX) / 500) * 500);
       apply();
     }
+    lost.textContent = `${Math.round(anim.giftsLostShare() * 100)}%`;
     requestAnimationFrame(tick);
   })(performance.now());
   apply();

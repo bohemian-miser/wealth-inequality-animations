@@ -1,48 +1,55 @@
 # Wealth inequality animations
 
-Animations of how wealth is held and passed on in Australia. Plain HTML and
-canvas: no build step and no dependencies.
+Animations of how wealth is held and passed between generations in
+Australia, built from published ABS and Productivity Commission tables.
+Plain HTML and canvas: no build step and no dependencies at runtime.
+
+**Live:** <https://bohemian-miser.github.io/wealth-inequality-animations/>
+
+## 1. Passing it back
+
+A grid of 240 households. Each row is a wealth decile among households of the
+same age, with the richest at the top. Dots drift left to right as their
+households age from 20 to 90, and a dot's area is its net worth (ABS
+2019-20). Parents pass gifts (gold) and inheritances (pink) to adult children
+at the rates, ages and amounts the Productivity Commission measured in HILDA.
+Each child's gold core is what they have received so far.
+
+The squeeze is a what-if: extra yearly costs that a parent must cover out of
+cash before giving. Using ABS figures for cash on hand (about $9k for the
+bottom fifth, $233k for the top), the lower rows stop giving first. The
+gauge shows what parents in each row pass back each year, and the dashed
+part is what the squeeze took.
+
+`?shock=20000` starts with a $20k squeeze.
+
+## Grounding
+
+- [`data/SOURCES.md`](data/SOURCES.md): every source table, the method, and
+  each assumption, named.
+- [`data/VALIDATION.md`](data/VALIDATION.md): the model checked against ABS.
+  The national percentiles match exactly, and each age band's mean is within
+  a few percent. It is also checked against ACOSS & UNSW figures it was not
+  fitted to.
+- `data/raw/`: the published files, unmodified (CC BY 4.0).
+
+The model is calibrated to these sources, but it is still a model. The
+squeeze in particular is an assumption built on real cash buffers, not a
+measured behaviour.
+
+## Develop
 
 ```bash
-python3 -m http.server 8000   # then open http://localhost:8000/
+python3 -m http.server 8000                 # open http://localhost:8000/
+pip install -r scripts/requirements.txt     # to rebuild the data
+python3 scripts/build_data.py               # → src/data.generated.js, data/VALIDATION.md
 ```
 
-The page loads ES modules, so open it through a local server like this one,
-not as a `file://` URL. `?squeeze=0.8` starts it with the squeeze already on.
+Every push to `main` deploys to GitHub Pages (`.github/workflows/pages.yml`).
 
-## 1. Passing it back (`src/lifetimes.js`)
+## Data licences
 
-A grid of households. Each row is a wealth decile, with the richest at the
-top. Dots drift left to right as their households age from 20 to 90, then
-start again at 20 as a new household. A dot's area is its wealth. From 58 on,
-a household with more than it needs to keep sends sparkles of the surplus back
-to a household aged 22–48 in its own row. That stands for gifts, help with a
-deposit, and inheritances.
-
-The **squeeze** slider raises how much an older household has to keep first,
-from $25k up to $1M (rents, rates, living costs, aged care). The lower rows
-lose their surplus first and stop passing anything back, while the top rows
-hardly notice. The gauge on the right shows each row's flow. Young dots that
-were helped take on a warm tint.
-
-## Data
-
-These are illustrative models calibrated to published figures, not
-microsimulations. The numbers and how they are interpolated are in
-`src/data.js`.
-
-- ACOSS & UNSW Sydney, *Inequality in Australia 2024: Who is affected and how*
-  (April 2024; ABS Survey of Income and Housing 2022-23). Figures used: the top
-  10% of households average $5.2M and hold 44% of all wealth; the lowest 60%
-  average $343k; households under 35 average $410k, 35–64 $1.26M, and over 65
-  $1.58M. Also used: the 2018 edition's figure that the top 20% hold about 100×
-  the bottom 20%.
-  [UNSW summary](https://www.unsw.edu.au/newsroom/news/2024/04/wealth-gap-widening-new-report-acoss)
-- Productivity Commission, *Wealth transfers and their economic effects*
-  (December 2021). About $1.5 trillion was passed on over two decades, about
-  90% of it as inheritances. Givers are mostly older and receivers younger.
-  [pc.gov.au](https://www.pc.gov.au/inquiries-and-research/wealth-transfers)
-
-Not modelled yet: transfers that cross rows, house prices, super, and the
-PC's finding that transfers, *as a share of what the receiver already has*,
-are larger lower down.
+ABS and Productivity Commission material © Commonwealth of Australia,
+CC BY 4.0. Sources: Australian Bureau of Statistics, *Household Income and
+Wealth, Australia, 2019-20*; Productivity Commission, *Wealth transfers and
+their economic effects* (2021).
