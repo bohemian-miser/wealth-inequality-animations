@@ -268,7 +268,7 @@ export const DATA = {
  "giftFromParentsValue": 11815687168,
  "inheritanceOutflow2018": {
   "hilda": 52034606102,
-  "admin": 69731053215
+  "roach": 69731053215
  },
  "persistenceByAge": [
   [
@@ -630,7 +630,8 @@ export const DATA = {
   "2025": 816323
  },
  "rateLongRun": 0.0878,
- "realRate": 0.0364,
+ "realRate": 0.0331,
+ "paidNominalRate": 0.0844,
  "rateYears": [
   1970,
   2025

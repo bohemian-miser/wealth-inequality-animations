@@ -10,27 +10,30 @@ Plain HTML and canvas: no build step and no dependencies at runtime.
 
 A grid of households. Each row is an income decile, with the highest at the
 top. Dots drift left to right as their households age from 20 to 90, while
-the years run from 1970 to 2070. Every household, on its decile's ABS
-2019-20 income:
+the years run from 1970 to 2070. Every household, on its decile's estimated
+ABS 2019-20 income:
 1. Rents and saves (grey).
-2. Buys at that year's house price once it can (blue).
-3. Pays off a 30-year loan (green).
-4. Passes yearly help to its child in the same row, 25 years younger (gold).
+2. Buys a starter home once a deposit and the repayments fit (blue).
+3. Trades up after 10 years if it can.
+4. Pays the loan off (green).
+5. Passes yearly help to its child in the same row, 25 years younger (gold).
 
 Owners' dots swell as house prices rise. At 90, the estate passes down
-(pink): to the child, who is 65 by then, or past them to the grandchild if
-the child already owns.
+(pink), landing at the moment its heir's dot changes. It goes to the child,
+who is 65 by then, or to the grandchild if the child already owns outright
+and the grandchild still rents.
 
-Two lines mark, for each row, the age from which everyone in it has bought,
-and the age from which everyone owns outright. A strip chart tracks the
-house price, the share of under-40s who own, and over-65s' share of all
-owned homes.
+Two lines mark each row's average age at its first purchase and at paying
+off its mortgage, over the last 10 years. A strip chart tracks the house
+price, the share of under-40s who own, and over-65s' share of all owned
+homes.
 
 House prices follow the OECD price-to-income ratio at today's incomes
-through 2025, then are held at that level. In the model, under-40s owning
-falls from 28% (1980) to 18% (2020) and then 13%. Over-65s' share of owned
-homes rises from 45% to 60%. In the middle rows, home ownership ends up
-arriving with the inheritance, at 65.
+through 2025, then are held at that level. In the model:
+- Under-40s owning falls from about 51% (1980) to 23% (2020), then about 14%.
+- Over-65s' share of owned homes rises from 41% to 55%.
+- In the middle rows, owning increasingly arrives with the inheritance, at
+  65.
 
 `?year=2000`, `?speed=2` and `?paused=1` set how it starts.
 

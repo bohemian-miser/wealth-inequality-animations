@@ -242,19 +242,17 @@ gift_parent_value_1819 = row[y[0] + 1]
 gift_count_1819 = row[y[1] + 1]
 gift_avg_1819 = row[y[1] + 2]
 
-# Estimated inheritance outflow to the next generation (figure 1.7): the
-# HILDA-based and administrative estimates for 2018.
+# Estimated inheritance outflow to the next generation (figure 1.7), 2018:
+# the PC's HILDA-based estimate, and Roach (2018) as scaled by the PC (which
+# notes the scaling "will tend to inflate its value"). The 2018 row holds the
+# HILDA value; the Roach value sits on the row after it, in its own column.
 r17 = pc_rows('1.7', 60)
 i = next(i for i, r in enumerate(r17) if 'Administrative estimate' in r)
 hdr = r17[i]
-c_year = hdr.index('Year')
-outflow_2018 = {}
-for k, r in enumerate(r17[i + 1:i + 30]):
-    if r[c_year] == 2018:
-        outflow_2018['hilda'] = r[hdr.index('HILDA estimate')]
-        nxt = r17[i + 2 + k]
-        outflow_2018['admin'] = next(v for v in nxt if isinstance(v, float))
-        break
+c_year, c_hilda, c_roach = hdr.index('Year'), hdr.index('HILDA estimate'), hdr.index('Roach (2018)')
+k = next(k for k in range(i + 1, len(r17)) if r17[k][c_year] == 2018)
+outflow_2018 = {'hilda': r17[k][c_hilda], 'roach': r17[k + 1][c_roach]}
+assert isinstance(outflow_2018['hilda'], float) and isinstance(outflow_2018['roach'], float), outflow_2018
 
 r210 = pc_rows('2.10', 80)
 i = next(i for i, r in enumerate(r210) if 'Age of child' in r)
@@ -317,6 +315,7 @@ price_by_year = {y: round(price_2019_20 * v / ratio_base) for y, v in sorted(rat
 with open(os.path.join(RAW, 'rba-f5-lending-rates.csv'), encoding='utf-8-sig') as f:
     rba = list(csv.reader(f))
 rcol = rba[1].index('Lending rates; Housing loans; Banks; Variable; Standard; Owner-occupier')
+dcol = rba[1].index('Lending rates; Housing loans; Banks; Variable; Discounted; Owner-occupier')
 monthly = [(int(r[0][-4:]), float(r[rcol])) for r in rba if r and r[0][:2].isdigit() and r[rcol]]
 y0, y1 = min(ratio), max(ratio)
 span = [v for y, v in monthly if y0 <= y <= y1]
@@ -331,13 +330,22 @@ for r in g1:
     if len(r) > 1 and r[0][:2].isdigit() and r[1]:
         cpi.setdefault(int(r[0][-4:]), []).append(float(r[1]))
 cpi = {y: sum(v) / len(v) for y, v in cpi.items()}
+# Rates actually paid: the discounted owner-occupier rate where the RBA has
+# it (from 2004), the standard rate before.
+cell = lambda r, c: r[c] if c < len(r) else ''
+paid = [(int(r[0][-4:]), float(cell(r, dcol) or cell(r, rcol))) for r in rba
+        if r and r[0][:2].isdigit() and (cell(r, dcol) or cell(r, rcol))]
 nominal = {}
-for y, v in monthly:
+for y, v in paid:
     nominal.setdefault(y, []).append(v / 100)
 nominal = {y: sum(v) / len(v) for y, v in nominal.items()}
+first_discounted = min(int(r[0][-4:]) for r in rba if r and r[0][:2].isdigit() and cell(r, dcol))
 real_by_year = {y: (1 + nominal[y]) / (cpi[y] / cpi[y - 1]) - 1
                 for y in range(y0, y1 + 1) if y in nominal and y in cpi and y - 1 in cpi}
 real_rate = sum(real_by_year.values()) / len(real_by_year)
+paid_nominal = sum(nominal[y] for y in real_by_year) / len(real_by_year)
+real_early = [v for y, v in real_by_year.items() if y < 1990]
+real_late = [v for y, v in real_by_year.items() if y >= 1990]
 inflation = sum(cpi[y] / cpi[y - 1] - 1 for y in real_by_year) / len(real_by_year)
 rate_by_year = {}
 for y, v in monthly:
@@ -382,6 +390,7 @@ data = {
     'priceByYear': price_by_year,
     'rateLongRun': round(rate_long_run, 4),
     'realRate': round(real_rate, 4),
+    'paidNominalRate': round(paid_nominal, 4),
     'rateYears': [y0, y1],
     'rateByYear': rate_by_year,
 }
@@ -525,8 +534,11 @@ lines += ['', '## Housing inputs', '',
           f'- Mean dwelling price 2019-20: ${price_2019_20:,.0f} (quarters: ' +
           ', '.join(f'${q:,.1f}k' for q in quarters) + ').',
           f'- Mortgage rate, long-run average of the RBA standard variable rate {y0}–{y1}: '
-          f'{100 * rate_long_run:.2f}% nominal; less CPI inflation (average {100 * inflation:.2f}%), '
-          f'a real rate of {100 * real_rate:.2f}%, which the model uses (its money is 2019-20 dollars).',
+          f'{100 * rate_long_run:.2f}% nominal (headline). Rates actually paid (the discounted rate from '
+          f'{first_discounted}, the standard rate before): {100 * paid_nominal:.2f}% nominal; less each year\'s '
+          f'CPI inflation (average {100 * inflation:.2f}%), a real rate of {100 * real_rate:.2f}%, which the model '
+          f'uses (its money is 2019-20 dollars). Real rates by era: {100 * sum(real_early) / len(real_early):.1f}% '
+          f'before 1990 (regulated, rationed credit), {100 * sum(real_late) / len(real_late):.1f}% from 1990.',
           '- House price at 2019-20 incomes for each year\'s price-to-income ratio: ' +
           ', '.join(f'{y} ${price_by_year[y] / 1e3:,.0f}k' for y in (1970, 1985, 1995, 2005, 2015, 2024)) + '.',
           '', '| Income decile | ' + ' | '.join(AGE_BANDS) + ' |', '|---' * 8 + '|']
