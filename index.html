@@ -4,16 +4,17 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Passing It Back</title>
-<meta name="description" content="Australian household wealth by age and decile, and the gifts and inheritances that pass between generations, animated from ABS and Productivity Commission data.">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path d='M8 0l2 6 6 2-6 2-2 6-2-6-6-2 6-2z' fill='%23ffd36e'/></svg>">
+<meta name="description" content="Australian households by income decile and age: when each can buy a house, when they own it outright, and what they then pass to their children, at any house price. Built on ABS, RBA, OECD and Productivity Commission data.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path d='M8 1 1 7h2v8h4v-5h2v5h4V7h2z' fill='%236ee1a0'/></svg>">
 <style>
   :root {
     --bg: #0d1020;
     --fg: #e6e9f4;
     --muted: #9aa3bf;
     --gold: #ffd36e;
-    --rose: #ff96aa;
-    --blue: #96b4ff;
+    --rent: rgb(120,128,150);
+    --mortgage: rgb(120,160,255);
+    --owned: rgb(110,225,160);
     --panel: rgba(255, 255, 255, 0.05);
   }
   * { box-sizing: border-box; }
@@ -23,15 +24,19 @@
   header { padding-top: 16px; max-width: 980px; }
   h1 { margin: 0 0 4px; font-size: 22px; font-weight: 650; }
   header p { margin: 0; color: var(--muted); }
-  .gold { color: var(--gold); } .rose { color: var(--rose); }
+  .gold { color: var(--gold); } .owned { color: var(--owned); } .mortgage { color: var(--mortgage); }
   canvas { width: 100%; height: min(72vh, 640px); min-height: 400px; display: block; }
-  .controls { display: flex; flex-wrap: wrap; gap: 10px 24px; align-items: center;
-    padding-top: 10px; padding-bottom: 10px; background: var(--panel); }
-  .controls label { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-  input[type=range] { width: min(300px, 70vw); accent-color: var(--gold); }
+  .controls { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center;
+    padding-top: 12px; padding-bottom: 12px; background: var(--panel); }
+  .price { display: flex; flex-direction: column; gap: 2px; }
+  .price label { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .track { position: relative; width: min(360px, 80vw); }
+  input[type=range] { width: 100%; margin: 0; accent-color: var(--owned); }
+  .marks { position: relative; height: 16px; font-size: 11px; color: var(--muted); }
+  .marks span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
   button { background: transparent; color: var(--fg); border: 1px solid rgba(255,255,255,0.2);
     border-radius: 6px; padding: 5px 12px; font: inherit; cursor: pointer; }
-  button[aria-pressed=true] { border-color: var(--gold); color: var(--gold); }
+  button[aria-pressed=true] { border-color: var(--owned); color: var(--owned); }
   .speed { display: inline-flex; align-items: center; gap: 4px; }
   .speed button { padding: 5px 9px; min-width: 32px; }
   .speed .unit { color: var(--muted); font-size: 13px; }
@@ -41,6 +46,7 @@
     font-size: 13px; padding-top: 10px; }
   .sw { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px;
     vertical-align: -1px; }
+  .ln { display: inline-block; width: 18px; height: 0; margin-right: 6px; vertical-align: 3px; }
   section { max-width: 820px; padding-top: 18px; padding-bottom: 28px; color: var(--muted); font-size: 14px; }
   section h2 { color: var(--fg); font-size: 16px; margin: 18px 0 6px; }
   section a { color: var(--fg); }
@@ -50,76 +56,142 @@
 <body>
   <header>
     <h1>Passing it back</h1>
-    <p>Each dot is a household, ageing left to right from 20 to 90. Its size is its net worth.
-      Rows are wealth deciles for households of the same age, richest at the top. Parents pass
-      <span class="gold">● gifts</span> and <span class="rose">● inheritances</span> to their
-      adult children at the rates, ages and amounts Australians reported. Tighten the squeeze and
-      watch which rows can still afford to give.</p>
+    <p>Each dot is a household, ageing left to right from 20 to 90. Rows are income deciles,
+      highest at the top; a dot's size is its wealth. Every household rents and saves, buys the
+      house when it can, pays it off, and then passes <span class="gold">● help</span> to its
+      child in the same row, 25 years younger. Move the house price and watch who gets to
+      <span class="owned">own outright</span>, and when.</p>
   </header>
-  <canvas id="stage" aria-label="Animated grid of households by age and wealth decile, with gifts and inheritances flying between them"></canvas>
+  <canvas id="stage" aria-label="Households by income decile and age: renting, paying a mortgage or owning outright, with help flowing from parents to children"></canvas>
   <div class="controls">
-    <label>Squeeze: parents' extra costs a year
-      <input id="shock" type="range" min="0" max="40000" step="500" value="0">
-      <b id="shockValue">$0</b>
-    </label>
-    <button id="auto" aria-pressed="false">Tighten slowly</button>
+    <div class="price">
+      <label>House price
+        <b id="priceValue">$685k</b>
+        <span class="readout" id="ratio"></span>
+      </label>
+      <div class="track">
+        <input id="price" type="range" min="250000" max="1000000" step="5000" value="685000" aria-describedby="ratio">
+        <div class="marks" id="marks"></div>
+      </div>
+    </div>
+    <button id="history" aria-pressed="false">Play history</button>
     <button id="pause" aria-pressed="false">Pause</button>
     <span class="speed" role="group" aria-label="Speed">Speed
       <button data-speed="0.25" aria-pressed="false">¼</button><button data-speed="0.5" aria-pressed="false">½</button><button data-speed="1" aria-pressed="true">1</button><button data-speed="2" aria-pressed="false">2</button><button data-speed="4" aria-pressed="false">4</button>
       <span class="unit">years/s</span>
     </span>
-    <span class="readout">Gifts lost to the squeeze: <b id="lost">0%</b> of their value</span>
   </div>
   <div class="legend">
-    <span><span class="sw" style="background:var(--blue)"></span>net worth (area)</span>
-    <span><span class="sw" style="border:1px dashed var(--blue)"></span>negative net worth</span>
-    <span><span class="sw" style="background:var(--gold)"></span>core: received so far in life</span>
-    <span><span class="sw" style="border:1px solid #aab"></span>a gift the parent couldn't afford</span>
-    <span>bars: what parents in each row pass back a year, per household: <span class="rose">inheritances</span> + <span class="gold">gifts</span> (dashed: lost to the squeeze)</span>
+    <span><span class="sw" style="background:var(--rent)"></span>renting, saving a deposit</span>
+    <span><span class="sw" style="background:var(--mortgage)"></span>paying a mortgage</span>
+    <span><span class="sw" style="background:var(--owned)"></span>owns outright</span>
+    <span><span class="ln" style="border-top:2px dashed var(--mortgage)"></span>age each row buys</span>
+    <span><span class="ln" style="border-top:2px solid var(--owned)"></span>age each row owns outright</span>
+    <span><span class="sw" style="background:var(--gold)"></span>help to the child, once a year</span>
   </div>
   <section>
     <h2>What's real and what's assumed</h2>
     <ul>
-      <li><b>Dot sizes</b> are mean net worth by age and decile. They come from the ABS
-        <i>Household Income and Wealth, Australia 2019-20</i>: each age band's mean and median,
-        and the national percentiles and quintile means. The model reproduces ABS's national
-        P10–P90 exactly, and each age band's mean to within a few percent (≤8%).</li>
-      <li><b>Gifts and inheritances</b> come from the Productivity Commission's <i>Wealth transfers
-        and their economic effects</i> (2021, HILDA data). That covers how many there are each
-        year, the recipient's age, the average amount at each age, which wealth quintiles receive
-        them, and how much each quintile gets. In dollars the top fifth receives about 5.5× what
-        the bottom fifth does. Relative to what they already have, the bottom fifth gains about
-        30× more.</li>
-      <li><b>Who gives</b>: a parent in the child's own row, 30 years older (both assumptions).
-        Each row is a line of families. Real families are less tied than that: the PC measures
-        a rank link between parents' and children's wealth of 0.09 at age 20, rising to 0.49 from 40.</li>
-      <li><b>The squeeze is a what-if</b>, not data. A parent facing extra yearly costs gives
-        only out of the cash left once they're covered. The gift is scaled by 1 − cost ÷ the
-        average cash in the bank for the parent's wealth quintile (ABS: about $9k for the bottom
-        fifth, $233k for the top). Inheritances are left unchanged.</li>
-      <li>At speed 1, one second is one year. The grid is 240 households, so every dot stands for about
-        40,000 real ones. Every age has the same number of dots.</li>
+      <li><b>Incomes</b> are ABS household disposable incomes by decile and age, 2019-20
+        (<i>Household Income and Wealth</i>, table 10.1). A household stays in its decile all its life.</li>
+      <li><b>The house</b> is the ABS mean dwelling price, $685k in 2019-20 (ABS publishes a mean,
+        not a median). The year marks show what a house would cost at 2019-20 incomes, using that
+        year's price-to-income ratio (OECD). In 1985 it would be about $376k; by 2024 it's $818k.</li>
+      <li><b>The mortgage rate</b> is a real rate of 3.6%: the RBA's standard variable rate from
+        1970 to 2025 (8.8% on average) minus inflation. The model works in 2019-20 dollars, so
+        the price slider is the only thing that changes.</li>
+      <li><b>The rules</b>: save 10% of income, buy once the loan can be repaid within 30 years
+        on 17% of income, and put that 17% towards it until it's paid off. After that, give
+        4.75% of income to the child until the child owns outright too. These numbers are
+        calibrated, not guessed. The saving and housing shares are fitted to ABS home ownership
+        by age, with each age group run at the price it faced around 30. The giving share is
+        set so the gifts total matches the Productivity Commission's figure for gifts from
+        parents: about $1,200 per household a year. The model under-predicts how many under-45s
+        own, and has 45–64s paying off too soon. Real buyers start cheaper and trade up.</li>
+      <li><b>Assumptions:</b> a child is 25 years younger than their parent and in the same row.
+        Every generation lives the same life at the price shown. There are no inheritances,
+        super or investments. Wealth here is housing equity plus savings.</li>
     </ul>
-    <p>Full method, every source table and the validation checks:
+    <p>Full method, every source table and the checks:
       <a href="https://github.com/bohemian-miser/wealth-inequality-animations">github.com/bohemian-miser/wealth-inequality-animations</a>
       (<a href="https://github.com/bohemian-miser/wealth-inequality-animations/blob/main/data/SOURCES.md">sources</a>,
-      <a href="https://github.com/bohemian-miser/wealth-inequality-animations/blob/main/data/VALIDATION.md">validation</a>).</p>
+      <a href="https://github.com/bohemian-miser/wealth-inequality-animations/blob/main/data/CALIBRATION.md">calibration</a>).</p>
   </section>
 <script type="module">
   import { startLifetimes } from './src/lifetimes.js';
-  import { money } from './src/data.js';
+  import { DATA } from './src/data.generated.js';
 
-  const anim = startLifetimes(document.getElementById('stage'));
-  const slider = document.getElementById('shock');
-  const shockValue = document.getElementById('shockValue');
-  const lost = document.getElementById('lost');
-  const auto = document.getElementById('auto');
+  const money = (x) => x >= 1e6 ? `$${(x / 1e6).toFixed(2)}M` : `$${Math.round(x / 1e3)}k`;
+  const slider = document.getElementById('price');
+  const MIN = Number(slider.min), MAX = Number(slider.max);
+  const years = Object.keys(DATA.priceByYear).map(Number);
+  const markYears = [1985, 2005, 2015, 2024];
+  const marks = document.getElementById('marks');
+  for (const y of markYears) {
+    const s = document.createElement('span');
+    s.textContent = y;
+    s.style.left = `${(100 * (DATA.priceByYear[y] - MIN)) / (MAX - MIN)}%`;
+    marks.append(s);
+  }
+
+  const anim = startLifetimes(document.getElementById('stage'), {
+    prices: [MIN, DATA.price2019_20, MAX],
+  });
+  const priceValue = document.getElementById('priceValue');
+  const ratio = document.getElementById('ratio');
+  const historyBtn = document.getElementById('history');
   const pause = document.getElementById('pause');
-  const MAX = Number(slider.max);
 
   const params = new URLSearchParams(location.search);
-  if (params.has('shock')) slider.value = params.get('shock');
+  slider.value = Math.round(DATA.price2019_20 / 5000) * 5000;
+  if (params.has('price')) slider.value = params.get('price');
+  const startYear = DATA.priceByYear[params.get('year')] ? Number(params.get('year')) : null;
+  if (startYear) slider.value = DATA.priceByYear[startYear];
 
+  function nearestYear(p) {
+    let best = null;
+    for (const y of years) if (best === null || Math.abs(DATA.priceByYear[y] - p) < Math.abs(DATA.priceByYear[best] - p)) best = y;
+    return Math.abs(DATA.priceByYear[best] - p) / p < 0.02 ? best : null;
+  }
+
+  function apply(year = null) {
+    const p = Number(slider.value);
+    anim.setPrice(p);
+    priceValue.textContent = money(p);
+    const y = year ?? nearestYear(p);
+    ratio.textContent = `${(p / DATA.medianDisposable).toFixed(1)}× a middle household's yearly income`
+      + (y ? ` · the ${y} ratio` : '');
+  }
+  slider.addEventListener('input', () => { setHistory(false); apply(); });
+
+  // History: step through each year's price, two seconds a year.
+  let historyOn = false, historyStart = 0;
+  function setHistory(on) {
+    historyOn = on;
+    historyBtn.setAttribute('aria-pressed', String(on));
+    historyBtn.textContent = on ? 'Stop history' : 'Play history';
+    historyStart = performance.now();
+  }
+  historyBtn.addEventListener('click', () => setHistory(!historyOn));
+  let shownYear = null;
+  (function tick(now) {
+    if (historyOn) {
+      const i = Math.floor((now - historyStart) / 2000) % years.length;
+      if (years[i] !== shownYear) {
+        shownYear = years[i];
+        slider.value = DATA.priceByYear[shownYear];
+        apply(shownYear);
+      }
+    } else shownYear = null;
+    requestAnimationFrame(tick);
+  })(performance.now());
+
+  pause.addEventListener('click', () => {
+    const p = pause.getAttribute('aria-pressed') !== 'true';
+    pause.setAttribute('aria-pressed', String(p));
+    pause.textContent = p ? 'Play' : 'Pause';
+    anim.setPaused(p);
+  });
   const speeds = [...document.querySelectorAll('[data-speed]')];
   function setSpeed(v) {
     anim.setSpeed(v);
@@ -127,39 +199,7 @@
   }
   for (const b of speeds) b.addEventListener('click', () => setSpeed(Number(b.dataset.speed)));
   if (params.has('speed')) setSpeed(Number(params.get('speed')));
-
-  function apply() {
-    const v = Number(slider.value);
-    anim.setShock(v);
-    shockValue.textContent = money(v);
-  }
-  slider.addEventListener('input', () => { setAuto(false); apply(); });
-
-  // Ramp up over 60 s, hold 20 s, ease back over 20 s, repeat.
-  let autoOn = false, autoStart = 0;
-  function setAuto(on) {
-    autoOn = on;
-    auto.setAttribute('aria-pressed', String(on));
-    autoStart = performance.now() - (Number(slider.value) / MAX) * 60e3;
-  }
-  auto.addEventListener('click', () => setAuto(!autoOn));
-  pause.addEventListener('click', () => {
-    const p = pause.getAttribute('aria-pressed') !== 'true';
-    pause.setAttribute('aria-pressed', String(p));
-    pause.textContent = p ? 'Play' : 'Pause';
-    anim.setPaused(p);
-  });
-  (function tick(now) {
-    if (autoOn) {
-      const t = ((now - autoStart) / 1000) % 100;
-      const u = t < 60 ? t / 60 : t < 80 ? 1 : 1 - (t - 80) / 20;
-      slider.value = String(Math.round((u * MAX) / 500) * 500);
-      apply();
-    }
-    lost.textContent = `${Math.round(anim.giftsLostShare() * 100)}%`;
-    requestAnimationFrame(tick);
-  })(performance.now());
-  apply();
+  apply(startYear);
 </script>
 </body>
 </html>

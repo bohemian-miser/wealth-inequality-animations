@@ -8,34 +8,38 @@ Plain HTML and canvas: no build step and no dependencies at runtime.
 
 ## 1. Passing it back
 
-A grid of 240 households. Each row is a wealth decile among households of the
-same age, with the richest at the top. Dots drift left to right as their
-households age from 20 to 90, and a dot's area is its net worth (ABS
-2019-20). Parents pass gifts (gold) and inheritances (pink) to adult children
-at the rates, ages and amounts the Productivity Commission measured in HILDA.
-Each child's gold core is what they have received so far.
+A grid of households. Each row is an income decile among households of the
+same age, with the highest at the top. Dots drift left to right as their
+households age from 20 to 90, and a dot's size is its wealth.
 
-The squeeze is a what-if: extra yearly costs that a parent must cover out of
-cash before giving. Using ABS figures for cash on hand (about $9k for the
-bottom fifth, $233k for the top), the lower rows stop giving first. The
-gauge shows what parents in each row pass back each year, and the dashed
-part is what the squeeze took.
+Every row lives one deterministic life, using ABS 2019-20 incomes:
+1. Rent and save (grey).
+2. Buy the house once the mortgage is affordable (blue).
+3. Pay it off (green).
+4. Then pass part of its income to the child in the same row, 25 years
+   younger, until the child owns outright too (gold).
 
-`?shock=20000` starts with a $20k squeeze; `?speed=4` at 4 years a second (¼ to 4).
+Two curves trace the age each row buys and the age it owns outright.
+
+The slider sets the house price, with marks for what a house would cost at
+today's incomes using each year's price-to-income ratio (OECD). **Play
+history** steps through 1970–2025. At the 1985 ratio, 9 of the 10 rows buy.
+At 2019-20 prices 5 do, and at the 2024 ratio 3 do.
+
+`?year=1985`, `?price=500000` and `?speed=2` set where it starts.
 
 ## Grounding
 
-- [`data/SOURCES.md`](data/SOURCES.md): every source table, the method, and
+- [`data/SOURCES.md`](data/SOURCES.md): every source table, the model, and
   each assumption, named.
-- [`data/VALIDATION.md`](data/VALIDATION.md): the model checked against ABS.
-  The national percentiles match exactly, and each age band's mean is within
-  a few percent. It is also checked against ACOSS & UNSW figures it was not
-  fitted to.
+- [`data/CALIBRATION.md`](data/CALIBRATION.md): the fitted shares, home
+  ownership by age against ABS, a wealth cross-check, and each row's life at
+  three prices.
+- [`data/VALIDATION.md`](data/VALIDATION.md): the data inputs, with checks.
 - `data/raw/`: the published files, unmodified (CC BY 4.0).
 
-The model is calibrated to these sources, but it is still a model. The
-squeeze in particular is an assumption built on real cash buffers, not a
-measured behaviour.
+It is calibrated to these sources, but it is still a model. Each row is a
+single, typical life; the misses are listed in CALIBRATION.md.
 
 ## Develop
 
@@ -43,13 +47,14 @@ measured behaviour.
 python3 -m http.server 8000                 # open http://localhost:8000/
 pip install -r scripts/requirements.txt     # to rebuild the data
 python3 scripts/build_data.py               # → src/data.generated.js, data/VALIDATION.md
+node scripts/calibrate.mjs                  # → src/calibration.generated.js, data/CALIBRATION.md
 ```
 
 Every push to `main` deploys to GitHub Pages (`.github/workflows/pages.yml`).
 
 ## Data licences
 
-ABS and Productivity Commission material © Commonwealth of Australia,
-CC BY 4.0. Sources: Australian Bureau of Statistics, *Household Income and
-Wealth, Australia, 2019-20*; Productivity Commission, *Wealth transfers and
-their economic effects* (2021).
+ABS, RBA and Productivity Commission material © Commonwealth of Australia
+(ABS and PC under CC BY 4.0; RBA statistical tables per the RBA's copyright
+terms). OECD Analytical house prices indicators per the OECD's terms. See
+data/SOURCES.md for each source.

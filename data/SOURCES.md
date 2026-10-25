@@ -1,110 +1,112 @@
 # Sources and method
 
-Each number in the animation either comes from a table below or follows from
-one of the named assumptions at the end. `scripts/build_data.py` reads the
-raw files in `data/raw/` (downloaded exactly as published) and writes
-`src/data.generated.js`. `data/VALIDATION.md` checks the result against the
-published figures.
+The animation runs on a deterministic housing model (`src/model.js`).
+Everything it uses either comes from a published table below, is calibrated
+to one, or is one of the assumptions named at the end.
 
-## Data
+- `scripts/build_data.py` reads the raw files in `data/raw/` (as downloaded)
+  and writes `src/data.generated.js` and `data/VALIDATION.md`.
+- `scripts/calibrate.mjs` fits the model's free shares and writes
+  `src/calibration.generated.js` and `data/CALIBRATION.md`.
+
+## Used by the model
 
 ### ABS: Household Income and Wealth, Australia, 2019-20
 
-Australian Bureau of Statistics, Survey of Income and Housing 2019-20,
-released 28 April 2022. At the time of writing (October 2026) this is still
-the ABS's latest release in the series.
+ABS Survey of Income and Housing, released 28 April 2022. At the time of
+writing it is still the latest release in the series. Licence: CC BY 4.0.
 <https://www.abs.gov.au/statistics/economy/finance/household-income-and-wealth-australia/2019-20>
-Licence: CC BY 4.0.
 
 | File | Table | Used for |
 |---|---|---|
-| `abs-sih-2019-20-10.xlsx` | 10.2 | Mean and median net worth by age of reference person (15–24 … 75+) |
-| | 10.3 | Number of households by age |
-| `abs-sih-2019-20-2.xlsx` | 2.1 | Net worth P10–P90, quintile means, 2019-20 column |
-| `abs-sih-2019-20-7.xlsx` | 7.2 | Cash on hand by net worth quintile: accounts with financial institutions plus offset accounts |
+| `abs-sih-2019-20-10.xlsx` | 10.1 | Equivalised disposable income P10–P90 by age band, mean disposable and mean equivalised by age band (→ household income by decile and age); median disposable income of all households; housing costs by age (calibration comparison) |
+| | 10.3 | Owners without and with a mortgage by age (calibration target); households by age |
 
-### Productivity Commission: Wealth transfers and their economic effects
+### ABS: Total Value of Dwellings (6432.0)
 
-Research paper, December 2021, using HILDA Restricted Release 19. Amounts
-are in 2018 dollars.
+The mean price of residential dwellings in Australia, for the four quarters of
+2019-20: $668.8k, $686.8k, $694.7k and $689.4k, averaging **$684.9k**. ABS
+publishes a mean, not a median. File: `abs-total-value-dwellings-643201.xlsx`.
+<https://www.abs.gov.au/statistics/economy/price-indexes-and-inflation/total-value-dwellings>
+
+### OECD: Analytical house prices indicators, Australia
+
+The price-to-income ratio (`HPI_YDH`, 2015 = 100), 1970–2025. A year's mark
+on the slider is $684.9k × that year's ratio ÷ the 2019-20 ratio: the price
+a house would have at 2019-20 incomes. File: `oecd-house-prices-aus.csv`.
+<https://data-explorer.oecd.org/> (dataflow `DSD_AN_HOUSE_PRICES@DF_HOUSE_PRICES`).
+
+### RBA: F5 indicator lending rates, G1 consumer price inflation
+
+The model's money is in 2019-20 dollars, so it uses a **real** mortgage
+rate. For each year 1970–2025 it takes the year's average standard variable
+owner-occupier rate (F5), deflates it by that year's CPI growth (G1), then
+averages across the years: **3.64%**. The nominal average is 8.78% and
+inflation averaged 5.04%. Files: `rba-f5-lending-rates.csv`, `rba-g1-cpi.csv`.
+<https://www.rba.gov.au/statistics/tables/>
+
+### Productivity Commission: Wealth transfers and their economic effects (2021)
+
+Gifts from parents in 2018-19 totalled **$11.8B** (figure 1.9). Divided by
+ABS's 9,732,400 households, that is **$1,214** per household a year. The
+model's giving share is pinned to this. Licence: CC BY 4.0.
 <https://www.pc.gov.au/inquiries-and-research/wealth-transfers>
-Licence: CC BY 4.0. The chart data workbook is `pc-wealth-transfers-chart-data.xlsx`
-and the paper itself is `pc-wealth-transfers-2021.pdf`.
 
-| Figure | Used for |
-|---|---|
-| Overview fig. 3 | Share of gifts and of inheritances received at each age (15–19 … 75–79) |
-| 1.4 | Average inheritance by recipient's age |
-| 1.10 | Average gift by recipient's age (none reported past 54; the 50–54 value is carried on) |
-| 1.3 | Inheritances received in 2018-19: 405,884, worth $50.4B |
-| 1.9 | Gifts from parents in 2018-19: 1,535,371; all gifts worth $13.8B |
-| 2.1 | Share of each wealth quintile who inherited, and the average inheritance among them |
-| 2.3 | Share of each wealth quintile who received a gift, and the average gift among them |
-| 2.10 | Not used: rank-rank persistence between parents' and children's wealth (see "Own row" below) |
-| Overview fig. 4 | Validation only: transfers by quintile in dollars and as a share of wealth |
+## The model
 
-### Cross-checks only
+- **Rows.** Each row is an income decile among households of the same age.
+  Its income at each age is the decile's ABS household disposable income,
+  linear between the age bands' midpoints. A decile's mean is taken at its
+  middle percentile (P15 halfway between P10 and P20, and so on), with P5
+  extrapolated, and the top decile set so the ten deciles average to the
+  band's ABS mean. Equivalised income is converted to household income by
+  the band's mean disposable ÷ mean equivalised.
+- **One life per row, each year from 20 to 89:**
+  - *Renting:* save the saving share of income, plus any help from parents.
+    Buy as soon as savings cover a 20% deposit *and* the rest can be repaid
+    within 30 years, at the real rate, on the housing share of income. (The
+    repayment test always binds before the deposit does.)
+  - *Mortgage:* pay the housing share of income (and any help) off the loan.
+    Keep saving the saving share.
+  - *Owned outright:* keep saving, and give the giving share of income to the
+    child until the child owns outright too.
+- **Wealth** (dot size) is savings plus home equity, with no return on
+  savings, no super, shares, other property or inheritances. It sits near
+  ABS median net worth by age and below the mean (see CALIBRATION.md).
+- **Generations.** A row's child is the same row, 25 years younger, and every
+  generation lives the same life (a steady state). The model iterates until
+  parent and child agree.
 
-ACOSS & UNSW Sydney, *Inequality in Australia 2024: Who is affected and how*
-(April 2024, ABS data for 2022-23). Its figures are compared in
-`VALIDATION.md` but not fitted to, since they come three years after the ABS
-survey above: the top 10% averaging $5.2M; under-35s in the lowest 60%
-averaging $80k and in the top 10% $2M; the top sixth of older households
-holding 53% of older households' wealth.
-<https://www.unsw.edu.au/newsroom/news/2024/04/wealth-gap-widening-new-report-acoss>
+## Calibration
 
-## Method
+The saving share and housing share are fitted on a grid to ABS 2019-20 home
+ownership by age: owners, and owners outright, for each of 7 age bands. Each
+band is run at the price its cohort faced at about 30. Today's 75-year-olds
+bought at 1970 ratios, not today's. The giving share is pinned to the PC's
+gift total at the 2019-20 price.
 
-**Wealth by row and age.** Each ABS age band gets a shifted lognormal,
-X = exp(μ + σZ) − c. For any shift c, the band's published mean and median fix
-μ and σ, so every band matches ABS exactly. The seven shifts are then fitted
-so the bands, weighted by their household counts, come closest to ABS's
-national P10–P90 and quintile means. Every sampled household is then moved
-to the national ABS quantile of its rank in that mix. Below P20 the quantile
-function is linear (net worth crosses zero); from P20 to P90 it is
-log-linear; above P90 it is a Pareto tail. The bottom (P0) and the tail are
-set so the lowest and highest quintile means are ABS's. The animation's rows
-are the decile means within each age band, interpolated linearly between the
-bands' midpoints.
-
-**Transfers.** Each year, each dot receives an inheritance with probability
-405,884 ÷ 9,732,400 households, and a gift with probability 1,535,371 ÷ the
-same. HILDA counts people, so this mixes people and households. A transfer
-draws:
-
-1. The recipient's age, from the PC's age shares (15–19 is folded into age
-   20, where the grid starts).
-2. The recipient's wealth quintile, in proportion to the share of that
-   quintile who received one. The decile within the quintile is chosen at
-   random. Caveat: the PC's quintiles are of equivalised wealth across all
-   ages, while the rows are deciles within an age.
-3. The amount: the PC's average at that age × the quintile's average among
-   recipients ÷ the recipient-weighted mean of those averages. The age
-   averages are thus preserved, and the quintile spread comes from the PC.
-4. The giver: a dot 30 years older (capped at 89) in the recipient's own row,
-   always older than the recipient. Money only ever flows from older to younger.
-
-Dot sizes are always ABS's figures. The gold core shows what a household has
-received in the run so far. It doesn't add to the dot's size, because the
-ABS figures already include whatever was received. A one-lifetime warm-up
-runs before anything is drawn.
+The result: save **10%**, housing **17%**, give **4.75%**. The fit is flat
+for housing shares between about 17% and 25%. For comparison, ABS housing
+costs ÷ disposable income are 19% for 25–34s and 18% for 35–44s. Where the
+fit misses: under-45s own less in the model than in ABS, and 45–64s own
+outright too early. Both happen because the model buys once, at the mean
+price, while real buyers start cheaper and trade up later. The full tables
+are in `data/CALIBRATION.md`.
 
 ## Assumptions (not data)
 
-- **Generation gap: 30 years** between a parent and the child they give to.
-- **The squeeze.** A parent facing extra costs of S a year gives a gift
-  scaled by max(0, 1 − S ÷ their quintile's average cash on hand). That cash
-  is ABS table 7.2: $9.3k, $29.8k, $52.6k, $83.4k and $232.7k, bottom to top.
-  Inheritances are not squeezed. The squeeze is a what-if built on real cash
-  buffers, not a measured response.
-- **Own row.** Each row stands for a line of families, so a parent gives
-  only to a child in the same decile. Real families are less tied than that:
-  the PC (figure 2.10, Siminski & Yu 2021) measures a rank-rank persistence
-  of 0.09 between parents' and children's wealth when the child is 20, rising
-  to 0.49 from 40. The animation keeps each family in its lane for
-  readability. The amounts each row receives still come from the PC's
-  quintile data, as before.
-- **Equal dots per age.** The grid follows cohorts and leaves out mortality,
-  so older ages are over-represented compared with the real population.
-- **Same-age deciles.** A dot keeps its decile all its life. In reality
-  households move between deciles.
+- A household stays in its income decile all its life, and its child is in
+  the same decile. Real incomes and families move between deciles.
+- Everyone buys the same house, at the mean price. In reality, lower
+  incomes buy cheaper homes.
+- A 20% deposit, a 30-year repayment test, and a 25-year gap between parent
+  and child.
+- Everything is in 2019-20 dollars at a constant real mortgage rate, and the
+  house price is the only thing the slider changes.
+
+## Reference only
+
+`data/VALIDATION.md` also documents the data behind earlier versions of
+this animation: ABS net worth by age and decile (tables 2.1, 7.2, 10.2) and
+the PC's transfers by age and wealth quintile (`pc-wealth-transfers-*`). The
+current model doesn't use them, apart from the PC gift total above.

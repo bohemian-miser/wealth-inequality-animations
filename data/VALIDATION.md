@@ -106,3 +106,24 @@ three years of price growth after this survey.
 - Per household per year (÷ 9,732,400 ABS households): 0.042 inheritances, 0.158 gifts — HILDA counts people, so this mixes people and households.
 - Average transfer received over three years, all people, by wealth quintile (PC figure 4a): $2,317, $3,600, $3,479, $6,496, $12,776 — top/bottom 5.5×. As % of wealth: 32.3%, 3.4%, 1.4%, 1.5%, 1.0%.
 - Cash on hand (accounts + offset, ABS table 7.2) by quintile: $9,300, $29,800, $52,600, $83,400, $232,700.
+
+## Housing inputs
+
+- Mean dwelling price 2019-20: $684,925 (quarters: $668.8k, $686.8k, $694.7k, $689.4k).
+- Mortgage rate, long-run average of the RBA standard variable rate 1970–2025: 8.78% nominal; less CPI inflation (average 5.04%), a real rate of 3.64%, which the model uses (its money is 2019-20 dollars).
+- House price at 2019-20 incomes for each year's price-to-income ratio: 1970 $383k, 1985 $376k, 1995 $431k, 2005 $602k, 2015 $681k, 2024 $818k.
+
+| Income decile | 15–24 | 25–34 | 35–44 | 45–54 | 55–64 | 65–74 | 75+ |
+|---|---|---|---|---|---|---|---|
+| 1 | $33k | $35k | $43k | $40k | $33k | $28k | $30k |
+| 2 | $43k | $51k | $57k | $59k | $46k | $35k | $32k |
+| 3 | $53k | $64k | $71k | $76k | $60k | $40k | $34k |
+| 4 | $62k | $75k | $82k | $89k | $73k | $45k | $36k |
+| 5 | $71k | $86k | $94k | $103k | $85k | $51k | $38k |
+| 6 | $81k | $99k | $108k | $117k | $97k | $58k | $42k |
+| 7 | $90k | $115k | $123k | $132k | $111k | $66k | $49k |
+| 8 | $99k | $132k | $142k | $152k | $132k | $79k | $58k |
+| 9 | $115k | $156k | $171k | $184k | $165k | $104k | $73k |
+| 10 | $132k | $223k | $267k | $287k | $262k | $178k | $122k |
+
+Household disposable income a year; each band's ten deciles average to its ABS mean.

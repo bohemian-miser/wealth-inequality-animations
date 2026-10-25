@@ -7,10 +7,16 @@ Inputs (data/raw/, downloaded as published, CC BY 4.0):
   abs-sih-2019-20-10.xlsx  ... cube 10 (age of reference person)
   pc-wealth-transfers-chart-data.xlsx  Productivity Commission (2021),
                            Wealth transfers and their economic effects
+  abs-total-value-dwellings-643201.xlsx  ABS Total Value of Dwellings (6432.0)
+  oecd-house-prices-aus.csv  OECD Analytical house prices indicators, Australia
+  rba-f5-lending-rates.csv   RBA statistical table F5, indicator lending rates
+  rba-g1-cpi.csv             RBA statistical table G1, consumer price inflation
 
 Run: pip install -r scripts/requirements.txt && python3 scripts/build_data.py
 """
 
+import csv
+import datetime
 import json
 import math
 import os
@@ -241,6 +247,89 @@ i = next(i for i, r in enumerate(r210) if 'Age of child' in r)
 c = r210[i].index('Age of child')
 persistence = [[r[c], r[c + 1]] for r in r210[i + 1:] if isinstance(r[c], (int, float)) and r[c + 1] is not None]
 
+# ----------------------------------------------------------- housing -----
+
+WEEKS = 365.25 / 7
+
+# Household disposable income by decile within each age band. ABS table 10.1
+# gives equivalised disposable income at P10..P90 by age; a decile's mean is
+# taken at its middle (P15 = halfway between P10 and P20, and so on), the
+# bottom decile's at P5 extrapolated from P10 and P20, and the top decile's
+# so the ten average to the band's published mean. Equivalised is turned
+# back into household income by the band's mean disposable ÷ mean
+# equivalised disposable.
+t101 = rows(sheet('abs-sih-2019-20-10.xlsx', 'Table 10.1'), 45)
+mean_disp = nums(t101[find(t101, 'Disposable income')])[:7]
+mean_eq = nums(t101[find(t101, 'Equivalised disposable income')])[:7]
+housing_costs = nums(t101[find(t101, 'Housing costs')])[:7]
+median_disp_all = nums(t101[find(t101, 'Disposable income', find(t101, 'Median income'))])[8]
+eq_pct = [nums(t101[find(t101, f'{10 * k}th (P{10 * k})')])[:7] for k in range(1, 10)]
+income_deciles = []
+for b in range(7):
+    p = [eq_pct[k][b] for k in range(9)]
+    d = [p[0] - (p[1] - p[0]) / 2] + [(p[k] + p[k + 1]) / 2 for k in range(8)]
+    d.append(10 * mean_eq[b] - sum(d))
+    scale = mean_disp[b] / mean_eq[b]
+    income_deciles.append([round(v * scale * WEEKS) for v in d])
+
+# Tenure by age (validation): owners outright and with a mortgage.
+outright_by_age = nums(t103[find(t103, 'Owner without a mortgage')])[:7]
+mortgaged_by_age = nums(t103[find(t103, 'Owner with a mortgage')])[:7]
+
+# House price: ABS mean price of residential dwellings, Australia, averaged
+# over the four quarters of 2019-20 (ABS publishes a mean, not a median).
+ws = sheet('abs-total-value-dwellings-643201.xlsx', 'Data1')
+head = next(ws.iter_rows(max_row=1, values_only=True))
+col = next(j for j, c in enumerate(head) if c and str(c).split(';')[0].strip() == 'Mean price of residential dwellings'
+           and str(c).split(';')[1].strip() == 'Australia')
+quarters = [r[col] for r in ws.iter_rows(min_row=11, values_only=True)
+            if isinstance(r[0], datetime.datetime)
+            and datetime.datetime(2019, 7, 1) <= r[0] <= datetime.datetime(2020, 6, 30)]
+assert len(quarters) == 4, quarters
+price_2019_20 = sum(quarters) / 4 * 1e3
+
+# Price-to-income ratio by year (OECD, index 2015 = 100), relative to
+# 2019-20 (the mean of 2019 and 2020).
+ratio = {}
+with open(os.path.join(RAW, 'oecd-house-prices-aus.csv')) as f:
+    for r in csv.DictReader(f):
+        if r['MEASURE'] == 'HPI_YDH':
+            ratio[int(r['TIME_PERIOD'])] = float(r['OBS_VALUE'])
+ratio_base = (ratio[2019] + ratio[2020]) / 2
+price_by_year = {y: round(price_2019_20 * v / ratio_base) for y, v in sorted(ratio.items())}
+
+# Mortgage rate: the RBA's standard variable owner-occupier rate, averaged
+# over every month in the OECD series' years.
+with open(os.path.join(RAW, 'rba-f5-lending-rates.csv'), encoding='utf-8-sig') as f:
+    rba = list(csv.reader(f))
+rcol = rba[1].index('Lending rates; Housing loans; Banks; Variable; Standard; Owner-occupier')
+monthly = [(int(r[0][-4:]), float(r[rcol])) for r in rba if r and r[0][:2].isdigit() and r[rcol]]
+y0, y1 = min(ratio), max(ratio)
+span = [v for y, v in monthly if y0 <= y <= y1]
+rate_long_run = sum(span) / len(span) / 100
+# Incomes and prices here are 2019-20 dollars, so the model needs the real
+# rate: each year's average nominal rate deflated by that year's CPI growth
+# (annual average CPI over the previous year's), averaged over the span.
+with open(os.path.join(RAW, 'rba-g1-cpi.csv'), encoding='utf-8-sig') as f:
+    g1 = list(csv.reader(f))
+cpi = {}
+for r in g1:
+    if len(r) > 1 and r[0][:2].isdigit() and r[1]:
+        cpi.setdefault(int(r[0][-4:]), []).append(float(r[1]))
+cpi = {y: sum(v) / len(v) for y, v in cpi.items()}
+nominal = {}
+for y, v in monthly:
+    nominal.setdefault(y, []).append(v / 100)
+nominal = {y: sum(v) / len(v) for y, v in nominal.items()}
+real_by_year = {y: (1 + nominal[y]) / (cpi[y] / cpi[y - 1]) - 1
+                for y in range(y0, y1 + 1) if y in nominal and y in cpi and y - 1 in cpi}
+real_rate = sum(real_by_year.values()) / len(real_by_year)
+inflation = sum(cpi[y] / cpi[y - 1] - 1 for y in real_by_year) / len(real_by_year)
+rate_by_year = {}
+for y, v in monthly:
+    rate_by_year.setdefault(y, []).append(v)
+rate_by_year = {y: round(sum(v) / len(v) / 100, 4) for y, v in rate_by_year.items() if y0 <= y <= y1}
+
 # ------------------------------------------------------------ output -----
 
 data = {
@@ -267,7 +356,19 @@ data = {
     'giftsPerYear': round(gift_count_1819),
     'inheritanceValue': round(inh_value_1819),
     'giftValue': round(gift_value_1819),
+    'giftFromParentsValue': round(gift_parent_value_1819),
     'persistenceByAge': persistence,
+    'incomeDeciles': income_deciles,
+    'medianDisposable': round(median_disp_all * WEEKS),
+    'housingCostShareByAge': [round(h / d, 4) for h, d in zip(housing_costs, mean_disp)],
+    'outrightByAge': [v / 100 for v in outright_by_age],
+    'mortgagedByAge': [v / 100 for v in mortgaged_by_age],
+    'price2019_20': round(price_2019_20),
+    'priceByYear': price_by_year,
+    'rateLongRun': round(rate_long_run, 4),
+    'realRate': round(real_rate, 4),
+    'rateYears': [y0, y1],
+    'rateByYear': rate_by_year,
 }
 
 with open(os.path.join(ROOT, 'src', 'data.generated.js'), 'w') as f:
@@ -405,6 +506,19 @@ lines += ['', '## Transfers', '',
           ', '.join(f'{v:.1f}%' for v in transfer_pct_wealth) + '.',
           '- Cash on hand (accounts + offset, ABS table 7.2) by quintile: ' +
           ', '.join(f'${v * 1e3:,.0f}' for v in cash) + '.']
+lines += ['', '## Housing inputs', '',
+          f'- Mean dwelling price 2019-20: ${price_2019_20:,.0f} (quarters: ' +
+          ', '.join(f'${q:,.1f}k' for q in quarters) + ').',
+          f'- Mortgage rate, long-run average of the RBA standard variable rate {y0}–{y1}: '
+          f'{100 * rate_long_run:.2f}% nominal; less CPI inflation (average {100 * inflation:.2f}%), '
+          f'a real rate of {100 * real_rate:.2f}%, which the model uses (its money is 2019-20 dollars).',
+          '- House price at 2019-20 incomes for each year\'s price-to-income ratio: ' +
+          ', '.join(f'{y} ${price_by_year[y] / 1e3:,.0f}k' for y in (1970, 1985, 1995, 2005, 2015, 2024)) + '.',
+          '', '| Income decile | ' + ' | '.join(AGE_BANDS) + ' |', '|---' * 8 + '|']
+for d in range(10):
+    lines.append(f'| {d + 1} | ' + ' | '.join(f'${income_deciles[b][d] / 1e3:,.0f}k' for b in range(7)) + ' |')
+lines.append('')
+lines.append('Household disposable income a year; each band\'s ten deciles average to its ABS mean.')
 with open(os.path.join(ROOT, 'data', 'VALIDATION.md'), 'w') as f:
     f.write('\n'.join(lines) + '\n')
 
