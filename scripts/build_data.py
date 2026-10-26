@@ -11,6 +11,12 @@ Inputs (data/raw/, downloaded as published, CC BY 4.0):
   oecd-house-prices-aus.csv  OECD Analytical house prices indicators, Australia
   rba-f5-lending-rates.csv   RBA statistical table F5, indicator lending rates
   rba-g1-cpi.csv             RBA statistical table G1, consumer price inflation
+  aihw-home-ownership-by-age.csv       AIHW, Census home ownership by age 1971–2021
+  abs-sih-2019-20-5.xlsx               ABS SIH 2019-20 cube 5 (income quintiles)
+  abs-hoc-2019-20-6-age.xlsx           ABS Housing Occupancy and Costs 2019-20, table 6.1
+  abs-4130-older-mortgage-series.csv   older owners' mortgages 1997-98 to 2019-20 (files in abs-4130-archive/)
+  abs-lending-indicators-560124.xlsx   ABS Lending Indicators, first home buyers
+  abs-life-tables-2022-2024.xlsx       ABS life tables 2022–2024
 
 Run: pip install -r scripts/requirements.txt && python3 scripts/build_data.py
 """
@@ -343,6 +349,10 @@ first_discounted = min(int(r[0][-4:]) for r in rba if r and r[0][:2].isdigit() a
 real_by_year = {y: (1 + nominal[y]) / (cpi[y] / cpi[y - 1]) - 1
                 for y in range(y0, y1 + 1) if y in nominal and y in cpi and y - 1 in cpi}
 real_rate = sum(real_by_year.values()) / len(real_by_year)
+# Every year the RBA and CPI series both cover (from 1960), for the model's
+# year-by-year rates.
+real_rate_by_year = {y: round((1 + nominal[y]) / (cpi[y] / cpi[y - 1]) - 1, 4)
+                     for y in sorted(nominal) if y in cpi and y - 1 in cpi}
 paid_nominal = sum(nominal[y] for y in real_by_year) / len(real_by_year)
 real_early = [v for y, v in real_by_year.items() if y < 1990]
 real_late = [v for y, v in real_by_year.items() if y >= 1990]
@@ -351,6 +361,70 @@ rate_by_year = {}
 for y, v in monthly:
     rate_by_year.setdefault(y, []).append(v)
 rate_by_year = {y: round(sum(v) / len(v) / 100, 4) for y, v in rate_by_year.items() if y0 <= y <= y1}
+
+# ------------------------------------------------------------ targets -----
+
+# Home ownership by age, Census 1971–2021 (AIHW, owners as % of households).
+own_by_age = {}
+with open(os.path.join(RAW, 'aihw-home-ownership-by-age.csv'), encoding='utf-8-sig') as f:
+    for r in csv.DictReader(f):
+        if r['State/territory'] != 'Australia':
+            continue
+        own_by_age.setdefault(r['Age_group'], {})[int(r['Pivot Field Names'])] = float(r['Pivot Field Values'].rstrip('%')) / 100
+census_groups = [g for g in own_by_age if g != 'Total']
+
+# Tenure by equivalised disposable household income quintile, 2019-20 (SIH table 5.3).
+t53 = rows(sheet('abs-sih-2019-20-5.xlsx', 'Table 5.3'), 45)
+q_outright = nums(t53[find(t53, 'Owner without a mortgage')])[:5]
+q_mortgage = nums(t53[find(t53, 'Owner with a mortgage')])[:5]
+q_renters = nums(t53[find(t53, 'Total renters')])[:5]
+
+# Older owners' mortgages over time (ABS Housing Occupancy and Costs releases;
+# see the CSV for each year's file and table). Check 2019-20 against table 6.1.
+older = []
+with open(os.path.join(RAW, 'abs-4130-older-mortgage-series.csv')) as f:
+    for r in csv.DictReader(f):
+        older.append({'year': int(r['year'][:4]) + 1, **{k: float(v) / 100 for k, v in r.items() if k.startswith('age_')}})
+t61 = rows(sheet('abs-hoc-2019-20-6-age.xlsx', 'Table 6.1'), 15)
+assert abs(nums(t61[find(t61, 'Owner with a mortgage')])[4] / 100 - older[-1]['age_55_64_mortgage']) < 1e-9
+
+# First home buyer owner-occupier loan commitments a year (ABS Lending
+# Indicators, series A130267830J, summed over complete calendar years).
+ws = sheet('abs-lending-indicators-560124.xlsx', 'Data1')
+ids = None
+fhb = {}
+for r in ws.iter_rows(values_only=True):
+    if r[0] == 'Series ID':
+        ids = list(r)
+        col = ids.index('A130267830J')
+        continue
+    if ids and isinstance(r[0], datetime.datetime) and r[col] is not None:
+        fhb.setdefault(r[0].year, []).append(r[col])
+fhb_loans = {y: round(sum(v)) for y, v in sorted(fhb.items()) if len(v) == 4}
+
+# Age at death after 65 (ABS life tables 2022–2024, table 9). A household
+# ends when its last member dies: a couple at the later of two deaths, a
+# single person at their own. Over-65 households are taken as 55% couples
+# (SIH 2019-20 table 6.1: couples and couple families among 65+).
+ws = sheet('abs-life-tables-2022-2024.xlsx', 'Table 9')
+lx_m, lx_f = {}, {}
+for r in ws.iter_rows(min_row=8, values_only=True):
+    if isinstance(r[0], (int, float)) and isinstance(r[1], (int, float)):
+        lx_m[int(r[0])] = r[1]; lx_f[int(r[0])] = r[5]
+COUPLES_65 = 0.55
+def survive(age):
+    sm, sf = lx_m[age] / lx_m[65], lx_f[age] / lx_f[65]
+    return COUPLES_65 * (1 - (1 - sm) * (1 - sf)) + (1 - COUPLES_65) * (sm + sf) / 2
+ages = sorted(a for a in lx_m if a >= 65)
+death_q = []
+for k in range(11):
+    target = 1 - k / 10
+    if target >= 1:
+        death_q.append(65.0)
+        continue
+    a = next((a for a in ages if survive(a) <= target), ages[-1])
+    s0, s1 = survive(a - 1), survive(a)
+    death_q.append(round(a - 1 + (s0 - target) / (s0 - s1) if s0 != s1 else a, 2))
 
 # ------------------------------------------------------------ output -----
 
@@ -390,7 +464,14 @@ data = {
     'priceByYear': price_by_year,
     'rateLongRun': round(rate_long_run, 4),
     'realRate': round(real_rate, 4),
+    'realRateByYear': real_rate_by_year,
+    'nominalRateByYear': {y: round(nominal[y], 4) for y in sorted(real_rate_by_year)},
     'paidNominalRate': round(paid_nominal, 4),
+    'deathAgeQuantiles': death_q,
+    'censusOwnByAge': {g: own_by_age[g] for g in census_groups},
+    'tenureByIncomeQuintile': {'outright': [v / 100 for v in q_outright], 'mortgage': [v / 100 for v in q_mortgage], 'renting': [v / 100 for v in q_renters]},
+    'olderMortgage': older,
+    'firstHomeBuyerLoans': fhb_loans,
     'rateYears': [y0, y1],
     'rateByYear': rate_by_year,
 }

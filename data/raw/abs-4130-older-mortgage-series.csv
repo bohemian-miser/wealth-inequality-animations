@@ -1,0 +1,12 @@
+year,age_45_54_outright,age_45_54_mortgage,age_55_64_outright,age_55_64_mortgage,source_file,source_table
+1997-98,42.8,39.8,68.2,17.3,abs-4130-archive/hoc_1997-98.pdf,Table 6
+2000-01,38.8,40.5,63.9,19.7,abs-4130-archive/hoc_2000-01.xls,Table 9
+2002-03,33.6,45.6,62.0,19.8,abs-4130-archive/hoc_2002-03.xls,Table 9
+2005-06,29.3,48.6,53.7,27.5,abs-4130-archive/hoc_2005-06_do001.zip,Table 9
+2007-08,24.2,51.8,52.8,29.6,abs-4130-archive/hoc_2007-08_do001.xls,Table_9
+2009-10,23.9,52.3,50.3,31.4,abs-4130-archive/hoc_2009-10_do001.xls,Table_9
+2011-12,22.1,52.5,45.0,35.1,abs-4130-archive/hoc_2011-12_do001.xls,Table_9
+2013-14,21.0,52.5,44.6,35.8,abs-4130-archive/hoc_2013-14_do001.xls,Table_10
+2015-16,16.6,55.5,41.6,37.8,abs-4130-archive/hoc_2015-16_table2.xls,Table 2.1 (shares computed from counts)
+2017-18,16.9,55.1,37.4,40.2,abs-4130-archive/hoc_2017-18_table2.xls,Table 2.1 (shares computed from counts)
+2019-20,15.2,56.6,36.1,43.0,abs-hoc-2019-20-6-age.xlsx,Table 6.1

@@ -9,7 +9,7 @@ import {
 
 const sim = simulate();
 const all = sim.rows.flat();
-const aliveIn = (h, year) => year - h.born >= AGE_MIN && year - h.born < AGE_MAX;
+const aliveIn = (h, year) => year - h.born >= AGE_MIN && year - h.born < h.deathAge;
 
 test('prices follow the data, held flat outside it', () => {
   for (const [y, p] of Object.entries(DATA.priceByYear)) assert.equal(priceAt(Number(y)), p);
@@ -58,13 +58,10 @@ test('every estate goes from the dead to a living heir in the same line', () => 
     assert.equal(b.from.died, b.year, 'leaves the year it dies');
     assert.ok(!from.has(b.from), 'one estate per household');
     from.add(b.from);
-    const gap = b.to.born - b.from.born;
-    assert.ok(gap === GAP || gap === 2 * GAP, `heir ${gap} years younger`);
+    assert.equal(b.to.born - b.from.born, GAP, 'the heir is the child');
     assert.ok(aliveIn(b.to, b.year), 'heir alive');
     assert.ok(b.amount > 0);
-    if (gap === 2 * GAP) {
-      assert.equal(b.via.st[b.year - START], OWNED, 'skips a child only if they own outright');
-    }
+    assert.ok(b.from.deathAge <= AGE_MAX && b.year - b.from.born >= b.from.deathAge, 'dies at its death age');
   }
 });
 
@@ -89,7 +86,14 @@ test('2019-20 tenure is in the range calibrated against ABS', () => {
   const total = n[0] + n[1] + n[2];
   const share = n.map((v) => v / total);
   // ABS 2019-20: renting 31%, mortgaged 37%, outright 30%.
-  assert.ok(Math.abs(share[RENT] - 0.31) < 0.1, `renting ${share[RENT]}`);
-  assert.ok(Math.abs(share[MORTGAGE] - 0.37) < 0.15, `mortgaged ${share[MORTGAGE]}`);
-  assert.ok(Math.abs(share[OWNED] - 0.30) < 0.12, `outright ${share[OWNED]}`);
+  assert.ok(Math.abs(share[RENT] - 0.31) < 0.08, `renting ${share[RENT]}`);
+  assert.ok(Math.abs(share[MORTGAGE] - 0.37) < 0.08, `mortgaged ${share[MORTGAGE]}`);
+  assert.ok(Math.abs(share[OWNED] - 0.30) < 0.08, `outright ${share[OWNED]}`);
+});
+
+test('ages at death follow the life-table spread', () => {
+  const ages = all.map((h) => h.deathAge).sort((a, b) => a - b);
+  const median = ages[Math.floor(ages.length / 2)];
+  assert.ok(median > 85 && median < 92, `median ${median}`);
+  assert.ok(ages[0] >= 65 && ages.at(-1) <= AGE_MAX);
 });

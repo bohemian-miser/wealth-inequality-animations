@@ -12,7 +12,7 @@
 // 1 January; a transfer lands at the moment its recipient's dot changes.
 
 import {
-  AGE_MIN, AGE_MAX, ROWS, START, SHOW_FROM, END, LAST_PRICE_YEAR,
+  AGE_MIN, AGE_MAX, ROWS, SPACING, START, SHOW_FROM, END, LAST_PRICE_YEAR,
   RENT, MORTGAGE, OWNED, simulate,
 } from './model.js';
 import {
@@ -33,8 +33,7 @@ export const COLOR = {
 };
 
 export const ROW_LABELS = [
-  'Lowest 10%', '10–20%', '20–30%', '30–40%', '40–50%',
-  '50–60%', '60–70%', '70–80%', '80–90%', 'Top 10%',
+  'Lowest tenth', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', 'Top tenth',
 ];
 
 export function startLifetimes(canvas, chart, { onYear } = {}) {
@@ -75,7 +74,8 @@ export function startLifetimes(canvas, chart, { onYear } = {}) {
 
   const xOfAge = (age) => layout.left + ((Math.min(AGE_MAX, Math.max(AGE_MIN, age)) - AGE_MIN) / SPAN) * layout.plotW;
   const yOfRow = (r) => layout.top + (ROWS - 1 - r + 0.5) * layout.rowH;
-  const maxRadius = () => Math.min(layout.rowH * 0.5, (layout.plotW / 28) * 0.55);
+  // Households in a row are SPACING years apart: the biggest dot fills about one gap.
+  const maxRadius = () => Math.min(layout.rowH * 0.5, (layout.plotW / ((AGE_MAX - AGE_MIN) / SPACING)) * 0.75);
   const radius = (w, min = 1.5) => Math.max(min, maxRadius() * Math.sqrt(Math.max(0, w) / maxWealth));
 
   const shown = (h) => shownState(h, t, arrivals);
@@ -98,7 +98,7 @@ export function startLifetimes(canvas, chart, { onYear } = {}) {
       const y = yOfRow(r);
       if (r % 2 === 1) { ctx.fillStyle = 'rgba(255,255,255,0.025)'; ctx.fillRect(left, y - rowH / 2, plotW, rowH); }
       ctx.fillStyle = 'rgba(220,226,240,0.7)'; ctx.textAlign = 'right';
-      ctx.fillText(narrow ? ROW_LABELS[r].replace('Lowest ', '↓').replace('Top ', '↑') : ROW_LABELS[r], left - 10, y);
+      ctx.fillText(narrow ? String(r + 1) : ROW_LABELS[r], left - 10, y);
     }
     ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(220,226,240,0.55)';
     for (let a = AGE_MIN; a <= AGE_MAX; a += 10) {
@@ -121,7 +121,7 @@ export function startLifetimes(canvas, chart, { onYear } = {}) {
         const { st, w } = shown(h);
         if (st < 0) continue;
         const age = t - h.born;
-        const fade = estate ? 1 : Math.min(1, (AGE_MAX - age) / 1.5);
+        const fade = estate ? 1 : Math.min(1, (h.deathAge - age) / 1.5);
         ctx.globalAlpha = Math.max(0, Math.min(1, (age - AGE_MIN) / 1.5, fade));
         ctx.fillStyle = COLOR[st];
         ctx.beginPath(); ctx.arc(xOfAge(age), y, radius(w), 0, Math.PI * 2); ctx.fill();
@@ -189,11 +189,13 @@ export function startLifetimes(canvas, chart, { onYear } = {}) {
     const gx = W - right + 18, gw = right - 24;
     ctx.textAlign = 'left';
     if (!narrow) { ctx.fillStyle = 'rgba(220,226,240,0.55)'; ctx.fillText('the row now', gx, top - 12); }
+    ctx.textAlign = 'left'; ctx.fillStyle = 'rgba(220,226,240,0.55)';
+    ctx.fillText(narrow ? 'income ↑' : 'lifetime income ↑', 6, top - 12);
     for (let r = 0; r < ROWS; r++) {
       const n = [0, 0, 0];
       for (const h of sim.rows[r]) {
         const age = t - h.born;
-        if (age < AGE_MIN || age >= AGE_MAX) continue;
+        if (age < AGE_MIN || age >= h.deathAge) continue;
         const { st } = shown(h);
         if (st >= 0) n[st]++;
       }
@@ -234,6 +236,9 @@ export function startLifetimes(canvas, chart, { onYear } = {}) {
     // After the data: held at the last year's price.
     cctx.fillStyle = 'rgba(255,255,255,0.03)';
     cctx.fillRect(xOf(LAST_PRICE_YEAR), pad.t, xOf(END) - xOf(LAST_PRICE_YEAR), h);
+    cctx.fillStyle = 'rgba(220,226,240,0.6)'; cctx.textAlign = 'left';
+    cctx.fillText('what-if: prices and rates held', xOf(LAST_PRICE_YEAR) + 6, pad.t + 9);
+    cctx.textAlign = 'center'; cctx.fillStyle = 'rgba(220,226,240,0.55)';
     // The shares are averaged over the last 5 years: households are born every
     // 2.5 years, which otherwise puts a sawtooth in them.
     const series = [

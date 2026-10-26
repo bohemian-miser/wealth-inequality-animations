@@ -1,129 +1,254 @@
-// Calibrate the housing model (src/model.js) to ABS and PC figures.
+// Calibrate the housing model (src/model.js) against history.
 //
 //   node scripts/calibrate.mjs   → src/calibration.generated.js, data/CALIBRATION.md
 //
-// The model runs through history; the fit compares its 2019-20 with ABS's.
-// Fitted (grid, coarse then fine):
-//   saveRate      share of income saved before 65
-//   housingShare  most of its income a mortgage's repayments may take (the
-//                 lending test; repayments are then fixed for 30 years)
-// to ABS 2019-20 tenure by age band: renting, mortgaged, owned outright.
-// Pinned:
-//   giveShare     share of income an owner-outright gives their child, so
-//                 the model's gifts per household a year (2017–2019) equal
-//                 the PC's 2018-19 gifts from parents ÷ ABS households.
+// Fitted together (Nelder–Mead), each target group weighted equally:
+//   - Census home ownership by age, 1981–2021 (AIHW);
+//   - ABS 2019-20 tenure by age (renting, mortgaged, owned outright);
+//   - ABS older owners' tenure, 45–54 and 55–64, 1997-98 to 2019-20;
+//   - ABS 2019-20 tenure by income quintile.
+// Free: saveRate and saveFloor (saving out of income above a floor),
+// housingShare (the lending limit), incomeSpread (how much a
+// lifetime's income is spread compared with one year's), priceSpread (how
+// much households' house prices vary). Pinned: giveRate, so the model's gifts
+// per household a year (2017–2019) equal the PC's 2018-19 gifts from parents.
 
 import { writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DATA } from '../src/data.generated.js';
-import { simulate, annuity, START, BANDS } from '../src/model.js';
+import { simulate, START, BANDS, RENT, MORTGAGE, OWNED } from '../src/model.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const OWN = DATA.ageBands.map((_, b) => DATA.outrightByAge[b] + DATA.mortgagedByAge[b]);
-const OUTRIGHT = DATA.outrightByAge;
-const MORTGAGED = DATA.mortgagedByAge;
-const RENTING = OWN.map((o) => 1 - o); // includes ABS's 'other' tenure (2–6%)
 const GIFT_TARGET = DATA.giftFromParentsValue / DATA.households;
-
+const CENSUS_YEARS = [1981, 1986, 1991, 1996, 2001, 2006, 2011, 2016, 2021];
 const mean = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
-const yearsOf = (sim, from, to) => sim.stats.slice(from - START, to - START + 1);
-const perHousehold = (sim, key, from, to) => mean(yearsOf(sim, from, to).map((s) => s[key])) / sim.households;
-// 2019-20: the average of the model's 2019 and 2020.
-const tenure = (sim) => BANDS.map((_, b) => ({
-  own: mean(yearsOf(sim, 2019, 2020).map((s) => s.own[b])),
-  outright: mean(yearsOf(sim, 2019, 2020).map((s) => s.outright[b])),
-}));
-const loss = (t) => t.reduce((a, x, b) => a + (1 - x.own - RENTING[b]) ** 2
-  + (x.own - x.outright - MORTGAGED[b]) ** 2 + (x.outright - OUTRIGHT[b]) ** 2, 0);
 
-// Pin the giving share: gifts scale nearly in proportion, so a few rounds
-// of rescaling converge.
-function pinned(saveRate, share) {
-  let giveShare = 0.05, sim;
-  for (let k = 0; k < 4; k++) {
-    sim = simulate({ saveRate, share, giveShare });
-    const g = perHousehold(sim, 'gifts', 2017, 2019);
+// --- what the model says --------------------------------------------------
+
+function alive(sim, year) {
+  const out = [];
+  for (const hs of sim.rows) for (const h of hs) {
+    const st = h.st[year - START];
+    if (st >= 0) out.push({ h, st, age: year - h.born });
+  }
+  return out;
+}
+const shareOf = (hs, test) => (hs.length ? hs.filter(test).length / hs.length : 0);
+const inAges = (hs, lo, hi) => hs.filter((x) => x.age >= lo && x.age < hi);
+
+function measure(sim) {
+  const m = {};
+  // Census: owners by 5-year age group.
+  m.census = {};
+  for (const g of Object.keys(DATA.censusOwnByAge)) {
+    const [lo, hi] = g.split('–').map(Number);
+    m.census[g] = {};
+    for (const y of CENSUS_YEARS) m.census[g][y] = shareOf(inAges(alive(sim, y), lo, hi + 1), (x) => x.st !== RENT);
+  }
+  // SIH 2019-20 tenure by age: the average of the model's 2019 and 2020.
+  m.sih = BANDS.map(([lo, hi]) => {
+    const hs = [2019, 2020].flatMap((y) => inAges(alive(sim, y), lo, hi));
+    return {
+      rent: shareOf(hs, (x) => x.st === RENT),
+      mortgage: shareOf(hs, (x) => x.st === MORTGAGE),
+      outright: shareOf(hs, (x) => x.st === OWNED),
+    };
+  });
+  // Older owners over time.
+  m.older = DATA.olderMortgage.map((o) => {
+    const hs = alive(sim, o.year);
+    const a = inAges(hs, 45, 55), b = inAges(hs, 55, 65);
+    return {
+      year: o.year,
+      age_45_54_outright: shareOf(a, (x) => x.st === OWNED), age_45_54_mortgage: shareOf(a, (x) => x.st === MORTGAGE),
+      age_55_64_outright: shareOf(b, (x) => x.st === OWNED), age_55_64_mortgage: shareOf(b, (x) => x.st === MORTGAGE),
+    };
+  });
+  // Tenure by current-income quintile, 2020.
+  const hs = alive(sim, 2020).map((x) => ({ ...x, y: sim.income(x.h.row, x.age) })).sort((p, q) => p.y - q.y);
+  m.quintiles = [0, 1, 2, 3, 4].map((q) => {
+    const part = hs.slice(Math.floor((q * hs.length) / 5), Math.floor(((q + 1) * hs.length) / 5));
+    return {
+      outright: shareOf(part, (x) => x.st === OWNED),
+      mortgage: shareOf(part, (x) => x.st === MORTGAGE),
+      renting: shareOf(part, (x) => x.st === RENT),
+    };
+  });
+  return m;
+}
+
+function loss(m) {
+  const groups = [];
+  const c = [];
+  for (const g of Object.keys(DATA.censusOwnByAge)) for (const y of CENSUS_YEARS) c.push((m.census[g][y] - DATA.censusOwnByAge[g][y]) ** 2);
+  groups.push(mean(c));
+  const s = [];
+  m.sih.forEach((x, b) => {
+    const own = DATA.outrightByAge[b] + DATA.mortgagedByAge[b];
+    s.push((x.rent - (1 - own)) ** 2, (x.mortgage - DATA.mortgagedByAge[b]) ** 2, (x.outright - DATA.outrightByAge[b]) ** 2);
+  });
+  groups.push(mean(s));
+  const o = [];
+  m.older.forEach((x, i) => {
+    for (const k of ['age_45_54_outright', 'age_45_54_mortgage', 'age_55_64_outright', 'age_55_64_mortgage']) o.push((x[k] - DATA.olderMortgage[i][k]) ** 2);
+  });
+  groups.push(mean(o));
+  const q = [];
+  const T = DATA.tenureByIncomeQuintile;
+  m.quintiles.forEach((x, i) => q.push((x.outright - T.outright[i]) ** 2, (x.mortgage - T.mortgage[i]) ** 2, (x.renting - T.renting[i]) ** 2));
+  groups.push(mean(q));
+  return { total: mean(groups), groups };
+}
+
+const giftsPerHousehold = (sim, from, to) =>
+  mean(sim.stats.slice(from - START, to - START + 1).map((s) => s.gifts / s.n));
+
+// Pin the gift rate: gifts scale nearly in proportion, so rescale a few times.
+function run(params) {
+  let giveRate = params.giveRate ?? 0.01, sim;
+  for (let k = 0; k < 3; k++) {
+    sim = simulate({ ...params, giveRate });
+    const g = giftsPerHousehold(sim, 2017, 2019);
     if (g <= 0) break;
-    giveShare *= GIFT_TARGET / g;
+    giveRate *= GIFT_TARGET / g;
   }
-  sim = simulate({ saveRate, share, giveShare });
-  return { saveRate, share, giveShare, sim, e: loss(tenure(sim)) };
+  sim = simulate({ ...params, giveRate });
+  return { sim, giveRate };
 }
 
-function search(saves, shares) {
-  let best = null;
-  for (const s of saves) for (const h of shares) {
-    const r = pinned(s, h);
-    if (!best || r.e < best.e) best = r;
-  }
-  return best;
+// --- search ---------------------------------------------------------------
+
+// Bounds keep each parameter plausible, so the fit can't hide a structural
+// gap behind an implausible number: banks' serviceability tests sit around
+// 30% of income (25–40% here); house prices within a market vary a lot but
+// not without limit.
+const SPACE = [
+  ['saveRate', 0.02, 0.5],
+  ['saveFloor', 10000, 70000],
+  ['housingShare', 0.25, 0.4],
+  ['incomeSpread', 0.3, 1],
+  ['priceSpread', 0, 0.6],
+];
+const toParams = (x) => Object.fromEntries(SPACE.map(([k, lo, hi], i) => [k, lo + (hi - lo) / (1 + Math.exp(-x[i]))]));
+const fromParams = (p) => SPACE.map(([k, lo, hi]) => { const u = (p[k] - lo) / (hi - lo); return Math.log(u / (1 - u)); });
+
+let lastGive = 0.01;
+function f(x) {
+  const params = { ...toParams(x), giveRate: lastGive };
+  const { sim, giveRate } = run(params);
+  lastGive = giveRate;
+  return loss(measure(sim)).total;
 }
-const range = (a, b, d) => { const out = []; for (let x = a; x <= b + 1e-9; x += d) out.push(Math.round(x * 1000) / 1000); return out; };
 
-let best = search(range(0.02, 0.3, 0.02), range(0.1, 0.4, 0.02));
-best = search(range(Math.max(0.005, best.saveRate - 0.02), best.saveRate + 0.02, 0.005),
-  range(Math.max(0.05, best.share - 0.02), best.share + 0.02, 0.005));
+function nelderMead(fn, x0, { iters = 160, step = 0.6 } = {}) {
+  const n = x0.length;
+  let pts = [x0, ...x0.map((_, i) => x0.map((v, j) => (i === j ? v + step : v)))].map((x) => ({ x, f: fn(x) }));
+  for (let it = 0; it < iters; it++) {
+    pts.sort((a, b) => a.f - b.f);
+    const c = x0.map((_, j) => mean(pts.slice(0, n).map((p) => p.x[j])));
+    const worst = pts[n];
+    const at = (t) => c.map((v, j) => v + t * (worst.x[j] - v));
+    const r = { x: at(-1) }; r.f = fn(r.x);
+    if (r.f < pts[0].f) {
+      const e = { x: at(-2) }; e.f = fn(e.x);
+      pts[n] = e.f < r.f ? e : r;
+    } else if (r.f < pts[n - 1].f) {
+      pts[n] = r;
+    } else {
+      const k = { x: at(0.5) }; k.f = fn(k.x);
+      if (k.f < worst.f) pts[n] = k;
+      else pts = pts.map((p, i) => (i === 0 ? p : { x: p.x.map((v, j) => pts[0].x[j] + 0.5 * (v - pts[0].x[j])) })).map((p) => ('f' in p ? p : { ...p, f: fn(p.x) }));
+    }
+    if (process.env.TRACE && it % 10 === 0) console.error(it, pts[0].f.toFixed(5), JSON.stringify(toParams(pts[0].x)));
+  }
+  pts.sort((a, b) => a.f - b.f);
+  return pts[0];
+}
 
-const fit = {
-  saveRate: best.saveRate,
-  housingShare: best.share,
-  giveShare: Math.round(best.giveShare * 10000) / 10000,
-};
+const start = fromParams({ saveRate: 0.15, saveFloor: 40000, housingShare: 0.3, incomeSpread: 0.6, priceSpread: 0.3 });
+const best = nelderMead(f, start);
+const r3 = (v) => (Math.abs(v) >= 100 ? Math.round(v) : Math.round(v * 1000) / 1000);
+const fitted = Object.fromEntries(Object.entries(toParams(best.x)).map(([k, v]) => [k, r3(v)]));
+const { giveRate } = run({ ...fitted, giveRate: lastGive });
+const fit = { ...fitted, giveRate: Math.round(giveRate * 1e5) / 1e5 };
 writeFileSync(join(ROOT, 'src', 'calibration.generated.js'),
   '// GENERATED by scripts/calibrate.mjs. Do not edit; see data/CALIBRATION.md.\n' +
   `export const CALIBRATION = ${JSON.stringify(fit, null, 1)};\n`);
 
-const sim = simulate({ saveRate: fit.saveRate, share: fit.housingShare, giveShare: fit.giveShare });
+// --- report ---------------------------------------------------------------
+
+const final = simulate(fit);
+const m = measure(final);
+const L = loss(m);
 const pct = (x) => `${Math.round(100 * x)}%`;
 const k = (x) => `$${Math.round(x / 1e3).toLocaleString('en-AU')}k`;
 const dollars = (x) => `$${Math.round(x).toLocaleString('en-AU')}`;
-const t = tenure(sim);
-const outflow = DATA.inheritanceOutflow2018;
-const median = (xs) => { const v = [...xs].sort((p, q) => p - q); return v.length ? v[Math.floor(v.length / 2)] : NaN; };
-const firstBuys = sim.buys.filter((e) => e.kind === 'starter' && e.year >= 2010 && e.year <= 2020);
-const heirAges = sim.bequests.filter((e) => e.year >= 1990 && e.year <= 2020).map((e) => e.year - e.to.born);
+const median = (xs) => { const v = [...xs].sort((a, b) => a - b); return v.length ? v[Math.floor(v.length / 2)] : NaN; };
+const firstBuys = final.buys.filter((e) => e.kind === 'starter' && !e.cash);
+const bequestsPerHousehold = mean(final.stats.slice(2016 - START, 2020 - START + 1).map((s) => s.bequests / s.n));
+const heirAges = final.bequests.filter((b) => b.year >= 2000 && b.year <= 2020).map((b) => b.year - b.to.born);
+
 const lines = [
   '# Calibration', '',
-  'Generated by `scripts/calibrate.mjs`. The model runs through history (prices from',
-  'the OECD ratio, flat before 1970, held at the last year after it); its 2019-20 is',
-  'compared with ABS\'s.', '',
-  `- Saving rate: **${(100 * fit.saveRate).toFixed(1)}%** of income before 65 (fitted).`,
-  `- Lending limit: **${pct(fit.housingShare)}** of income, the most a loan's repayments may take (fitted).`,
-  `  The model tests repayments at the real rate; a bank tests the first year's repayments at the`,
-  `  nominal rate (on average ${(100 * DATA.paidNominalRate).toFixed(1)}%), which are ${(annuity(1, DATA.paidNominalRate) / annuity(1, DATA.realRate)).toFixed(2)}× larger: in those terms the limit`,
-  `  is about ${pct(fit.housingShare * annuity(1, DATA.paidNominalRate) / annuity(1, DATA.realRate))} of income, close to the usual 30% test.`,
-  `- Giving share: **${(100 * fit.giveShare).toFixed(2)}%** of income, once owned outright, to the child`,
-  `  (pinned). Model gifts 2017–2019: ${dollars(perHousehold(sim, 'gifts', 2017, 2019))} per household a year;`,
-  `  PC: ${dollars(GIFT_TARGET)} ($${(DATA.giftFromParentsValue / 1e9).toFixed(1)}B from parents in 2018-19 ÷ ${DATA.households.toLocaleString('en-AU')} households;`,
-  '  HILDA counts people and all gifts from parents, not only help with housing).',
-  `- Real mortgage rate: ${(100 * DATA.realRate).toFixed(2)}% (rates actually paid, less inflation; see VALIDATION.md).`, '',
-  '## Tenure by age, 2019-20 (fit)', '',
-  '| Age band | Renting: model | ABS | Mortgaged: model | ABS | Outright: model | ABS |', '|---|---|---|---|---|---|---|',
-  ...t.map((x, b) => `| ${DATA.ageBands[b]} | ${pct(1 - x.own)} | ${pct(RENTING[b])} | ${pct(x.own - x.outright)} | ${pct(MORTGAGED[b])} | ${pct(x.outright)} | ${pct(OUTRIGHT[b])} |`),
+  'Generated by `scripts/calibrate.mjs`. The model runs through history and is fitted to',
+  'four groups of targets at once, weighted equally (root-mean-square error shown per group).', '',
+  '## Parameters', '',
+  `- Saving: **${(100 * fit.saveRate).toFixed(1)}%** of income above **${dollars(fit.saveFloor)}** a year, before 65 (both fitted).`,
+  `- Lending limit: **${(100 * fit.housingShare).toFixed(1)}%** of income (fitted): the most a new loan's first year of`,
+  '  repayments, at that year\'s nominal rate, may take. Banks\' usual rule of thumb is about 30%.',
+  `- Income spread: **${fit.incomeSpread}** (fitted). Each lifetime-income row's income is one year's decile`,
+  '  income pulled towards the age\'s middle: 1 would be one year\'s spread, 0 everyone the same.',
+  `- House price spread: **${fit.priceSpread}** (fitted), the standard deviation of the log of each household's`,
+  '  house price relative to the mean dwelling (where it buys).',
+  `- Gift rate: **${(100 * fit.giveRate).toFixed(2)}%** of the parent's wealth a year (pinned). Model gifts`,
+  `  2017–2019: ${dollars(giftsPerHousehold(final, 2017, 2019))} per household a year; PC: ${dollars(GIFT_TARGET)}.`, '',
+  `Fit (RMSE, percentage points): Census by age ${(100 * Math.sqrt(L.groups[0])).toFixed(1)}, SIH tenure by age ${(100 * Math.sqrt(L.groups[1])).toFixed(1)},`,
+  `older owners over time ${(100 * Math.sqrt(L.groups[2])).toFixed(1)}, tenure by income quintile ${(100 * Math.sqrt(L.groups[3])).toFixed(1)}.`, '',
+  '## Census home ownership by age (model / Census)', '',
+  '| Age | ' + CENSUS_YEARS.join(' | ') + ' |', '|---' + '|---'.repeat(CENSUS_YEARS.length) + '|',
+  ...Object.keys(DATA.censusOwnByAge).map((g) => `| ${g} | ` + CENSUS_YEARS.map((y) => `${pct(m.census[g][y])} / ${pct(DATA.censusOwnByAge[g][y])}`).join(' | ') + ' |'),
   '',
-  'ABS renting here includes its "other" tenure (2–6%). Where the model misses, and why',
-  '(not tuned away): its households stay in one income decile all their lives, so the',
-  'lowest row never buys and the next row up buys late, mostly with an inheritance;',
-  'and it has no 20–24-year-old buyers.', '',
+  '## Tenure by age, 2019-20 (model / ABS)', '',
+  '| Age band | Renting | Mortgaged | Outright |', '|---|---|---|---|',
+  ...m.sih.map((x, b) => {
+    const own = DATA.outrightByAge[b] + DATA.mortgagedByAge[b];
+    return `| ${DATA.ageBands[b]} | ${pct(x.rent)} / ${pct(1 - own)} | ${pct(x.mortgage)} / ${pct(DATA.mortgagedByAge[b])} | ${pct(x.outright)} / ${pct(DATA.outrightByAge[b])} |`;
+  }),
+  '',
+  'ABS renting here includes its "other" tenure (2–6%).', '',
+  '## Older owners over time (model / ABS)', '',
+  '| Year | 45–54 mortgaged | 45–54 outright | 55–64 mortgaged | 55–64 outright |', '|---|---|---|---|---|',
+  ...m.older.map((x, i) => {
+    const o = DATA.olderMortgage[i];
+    return `| ${x.year - 1}-${String(x.year).slice(2)} | ${pct(x.age_45_54_mortgage)} / ${pct(o.age_45_54_mortgage)} | ${pct(x.age_45_54_outright)} / ${pct(o.age_45_54_outright)} | ${pct(x.age_55_64_mortgage)} / ${pct(o.age_55_64_mortgage)} | ${pct(x.age_55_64_outright)} / ${pct(o.age_55_64_outright)} |`;
+  }),
+  '',
+  '## Tenure by income quintile, 2019-20 (model / ABS)', '',
+  'Model quintiles rank households by current household income; ABS by equivalised disposable income.', '',
+  '| Quintile | Renting | Mortgaged | Outright |', '|---|---|---|---|',
+  ...m.quintiles.map((x, i) => `| ${i + 1} | ${pct(x.renting)} / ${pct(DATA.tenureByIncomeQuintile.renting[i])} | ${pct(x.mortgage)} / ${pct(DATA.tenureByIncomeQuintile.mortgage[i])} | ${pct(x.outright)} / ${pct(DATA.tenureByIncomeQuintile.outright[i])} |`),
+  '',
   '## Checks (not fitted)', '',
-  `- First home bought 2010–2020: median age ${median(firstBuys.map((e) => e.age)).toFixed(0)} (n = ${firstBuys.length}).`,
-  `- Estates passed down, 2016–2020: ${dollars(perHousehold(sim, 'bequests', 2016, 2020))} per household a year. PC, 2018`,
-  `  (figure 1.7): $${(DATA.inheritanceOutflow2018.hilda / 1e9).toFixed(0)}B estimated from HILDA, ${dollars(DATA.inheritanceOutflow2018.hilda / DATA.households)} per household;`,
-  `  Roach (2018) as scaled by the PC, which it says tends to inflate the value: $${(DATA.inheritanceOutflow2018.roach / 1e9).toFixed(0)}B.`,
-  '  The model passes each estate whole to one heir at exactly 90, with no surviving spouse,',
-  '  aged care or other heirs, so it runs high.',
-  `- Heirs\' ages, 1990–2020: ${heirAges.filter((a) => a < 50).length} grandchildren (about 40) and ${heirAges.filter((a) => a >= 50).length}`,
-  '  children (about 65). The PC finds most inheritances go to people in their 50s and early',
-  '  60s; the model\'s 25-year generations and death at 90 put them at 65 or 40.', '',
+  `- First home bought with a mortgage, 2010–2020: median age ${median(firstBuys.filter((e) => e.year >= 2010 && e.year <= 2020).map((e) => e.age)).toFixed(0)}`,
+  '  (ABS: first home buyers averaged 32–33 from 1995-96 to 2011-12, and 34 in 2015-16).',
+  `- Estates passed down, 2016–2020: ${dollars(bequestsPerHousehold)} per household a year. PC, 2018 (figure 1.7):`,
+  `  $${(DATA.inheritanceOutflow2018.hilda / 1e9).toFixed(0)}B estimated from HILDA, ${dollars(DATA.inheritanceOutflow2018.hilda / DATA.households)} per household.`,
+  `- Heirs' median age, 2000–2020: ${median(heirAges).toFixed(0)} (PC: most inheritances go to people in their 50s and early 60s).`,
+  '- First home purchases by period (model count; ABS first-home-buyer loan commitments a year, for shape):',
+  ...[[2003, 2007], [2008, 2012], [2013, 2017], [2018, 2022]].map(([a, b]) => {
+    const n = firstBuys.filter((e) => e.year >= a && e.year <= b).length;
+    const abs = mean([...Array(b - a + 1)].map((_, i) => DATA.firstHomeBuyerLoans[a + i] ?? NaN).filter(Number.isFinite));
+    return `  - ${a}–${b}: ${n} in the model; ABS ${Math.round(abs / 1000)}k a year.`;
+  }),
+  '',
   '## History', '',
-  '| Year | House price | Under 40s owning | Over 65s\' share of owned homes | Estates passed down per household a year |',
-  '|---|---|---|---|---|',
+  "| Year | House price | Under 40s owning | Over 65s' share of owned homes |", '|---|---|---|---|',
+  ...[1970, 1980, 1990, 2000, 2010, 2020, 2030, 2050, 2070].map((y) => {
+    const s = final.stats[y - START];
+    return `| ${y} | ${k(s.price)} | ${pct(s.youngOwn / s.young)} | ${pct(s.homesOld / s.homes)} |`;
+  }),
+  '', 'After 2025 the price is held at its last level: a what-if, not a forecast.',
 ];
-for (const y of [1970, 1980, 1990, 2000, 2010, 2020, 2030, 2040, 2050, 2060, 2070]) {
-  const s = sim.stats[y - START];
-  lines.push(`| ${y} | ${k(s.price)} | ${pct(s.youngOwn / s.young)} | ${pct(s.homesOld / s.homes)} | ${dollars(perHousehold(sim, 'bequests', Math.min(2070, y + 2) - 4, Math.min(2070, y + 2)))} |`);
-}
-lines.push('', 'After 2025 the price is held at its last level: a what-if, not a forecast.');
 writeFileSync(join(ROOT, 'data', 'CALIBRATION.md'), lines.join('\n') + '\n');
 console.log(lines.join('\n'));

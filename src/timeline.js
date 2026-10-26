@@ -8,7 +8,7 @@
 // Transfers land at the moment their recipient's year turns over, which is
 // when the recipient's dot changes.
 
-import { AGE_MAX, START, END } from './model.js';
+import { START, END } from './model.js';
 
 const GOLDEN = 0.6180339887498949;
 
@@ -68,20 +68,20 @@ export function giftTiming(g) {
   return { launch: land - GIFT_FLIGHT, land };
 }
 
-// An estate leaves when its owner dies (at 90), or, if the hand-over follows
-// too soon to see it fly, a little before.
+// An estate leaves when its owner dies, or, if the hand-over follows too soon
+// to see it fly, a little before.
 export function estateTiming(b) {
   const land = landing(b);
-  return { launch: Math.min(b.from.born + AGE_MAX, land - ESTATE_MIN_FLIGHT), land };
+  return { launch: Math.min(b.from.born + b.from.deathAge, land - ESTATE_MIN_FLIGHT), land };
 }
 
-// Is a household on screen at time t? From 20 until 90, or, if it leaves an
-// estate, until the estate leaves.
+// Is a household on screen at time t? From 20 until it dies, or, if it
+// leaves an estate, until the estate leaves.
 export function onScreen(h, t, estate) {
   const age = t - h.born;
   if (age < 20) return false;
   if (estate) return t < estateTiming(estate).launch;
-  return age < AGE_MAX;
+  return age < h.deathAge;
 }
 
 export function byYear(events) {

@@ -30,8 +30,8 @@ test('an estate lands exactly when its heir shows the year it arrives', () => {
     assert.equal(shownYear(b.to, land - EPS), b.year - 1, 'heir still on the old year just before');
     assert.equal(shownYear(b.to, land + EPS), b.year, 'heir on the new year as it lands');
     assert.ok(land - launch >= ESTATE_MIN_FLIGHT - EPS, 'visible flight');
-    assert.ok(launch <= b.from.born + AGE_MAX + EPS, 'leaves no later than the death');
-    assert.ok(launch >= b.from.born + AGE_MAX - ESTATE_MIN_FLIGHT - EPS, 'and not long before');
+    assert.ok(launch <= b.from.born + b.from.deathAge + EPS, 'leaves no later than the death');
+    assert.ok(launch >= b.from.born + b.from.deathAge - ESTATE_MIN_FLIGHT - EPS, 'and not long before');
   }
 });
 
@@ -101,7 +101,7 @@ test('activeTransfers returns exactly the transfers in their window', () => {
 
 test('the start year has no stale state', () => {
   for (const h of sim.rows.flat()) {
-    if (1970 - h.born < 20 || 1970 - h.born >= AGE_MAX) continue;
+    if (1970 - h.born < 20 || 1970 - h.born >= h.deathAge) continue;
     assert.ok(shownState(h, 1970, arrivals).st >= 0);
     assert.ok(h.st[1970 - START] >= 0);
   }
