@@ -49,6 +49,7 @@ export const LAST_LOAN_AGE = 75; // lenders want a loan repaid by about this age
 export const MIN_TERM = 5;
 export const HEIR_SHARE = 0.5; // an estate splits between two children; one is in the row
 export const SEPARATION = 0.3; // share of households that split up at some point (30–60)
+export const HELPING_PARENTS = 0.4; // share of parents who give help to buy (surveys: 17% cash, 46–60% any help)
 // Mortgage rates by year (RBA rates actually paid; real = less that year's
 // CPI inflation). Before the series, its first year; after it, the averages
 // from 1990 (a what-if).
@@ -72,7 +73,8 @@ export const DEFAULTS = {
   giveRate: 0.05, // of the parent's wealth, given once as help to buy
   incomeSpread: 1, // 1 = one year's income spread; smaller = lifetime
   incomeNoise: 0, // sd of log income factor within a row (one or two earners, careers)
-  youngIncome: 1, // income at 20 as a share of the row's, rising to 1 by 30
+  youngIncome: 1, // income at 20 as a share of the row's, rising to all of it...
+  coupleOffset: 0, // ...by this many years after the year's median age at first marriage
   firstDeposit: FIRST_DEPOSIT, // share of a first home's price saved first
   priceSpread: 0, // sd of log house price factor
   ...CALIBRATION,
@@ -81,11 +83,21 @@ export const DEFAULTS = {
 const priceYears = Object.keys(DATA.priceByYear).map(Number);
 export const FIRST_PRICE_YEAR = Math.min(...priceYears);
 export const LAST_PRICE_YEAR = Math.max(...priceYears);
-export const START = FIRST_PRICE_YEAR - 110; // warm-up: everyone alive in 1970 has a past
-export const SHOW_FROM = FIRST_PRICE_YEAR;
+export const SHOW_FROM = 1970; // the animation starts here (the OECD series)
+export const START = SHOW_FROM - 110; // warm-up: everyone alive in 1970 has a past
 export const END = 2070;
 
 export const RENT = 0, MORTGAGE = 1, OWNED = 2;
+
+// The median age at first marriage that year (ABS, men and women averaged),
+// held at the ends of the series.
+const marriageYears = Object.keys(DATA.marriageAge).map(Number).sort((a, b) => a - b);
+export function partnerAge(year) {
+  if (year <= marriageYears[0]) return DATA.marriageAge[marriageYears[0]];
+  if (year >= marriageYears.at(-1)) return DATA.marriageAge[marriageYears.at(-1)];
+  const b = marriageYears.find((y) => y >= year), a = marriageYears[marriageYears.indexOf(b) - 1];
+  return DATA.marriageAge[a] + ((DATA.marriageAge[b] - DATA.marriageAge[a]) * (year - a)) / (b - a);
+}
 
 export function priceAt(year) {
   const y = Math.min(LAST_PRICE_YEAR, Math.max(FIRST_PRICE_YEAR, Math.floor(year)));
@@ -174,6 +186,7 @@ export function simulate(opts = {}) {
       hs.push({
         row: r, born, savings: 0, debt: 0, term: 0, state: RENT, home: 0, homeSince: null, died: null,
         helped: false, everOwned: false,
+        helps: draw(k, r, 6) < HELPING_PARENTS, // as a parent, gives help to buy
         // Separation: about a third of couples split (ABS); a split owner sells,
         // keeps half the equity and rents again.
         splitAge: draw(k, r, 4) < SEPARATION ? 30 + 30 * draw(k, r, 5) : null,
@@ -219,7 +232,8 @@ export function simulate(opts = {}) {
         const h = hs[i];
         if (!alive(h, year)) continue;
         const age = year - h.born;
-        const young = age < 30 ? p.youngIncome + ((1 - p.youngIncome) * (age - AGE_MIN)) / 10 : 1;
+        const full = Math.max(AGE_MIN + 1, partnerAge(year) + p.coupleOffset);
+        const young = age < full ? p.youngIncome + ((1 - p.youngIncome) * (age - AGE_MIN)) / (full - AGE_MIN) : 1;
         const y = income(r, age) * h.incomeFactor * young;
         if (age < RETIRE) h.savings += p.saveRate * y * (y / (y + p.saveHalf));
         if (h.splitAge !== null && age >= h.splitAge && age < h.splitAge + 1 && h.state !== RENT) {
@@ -245,13 +259,13 @@ export function simulate(opts = {}) {
             return savings >= p.firstDeposit * price && fits(loan, termFor(LOAN_TERM)) ? { size, price, loan } : null;
           };
           let buy = canBuy(h.savings);
-          // Help to buy: a parent who owns outright gives a share of its
-          // wealth once, at its child's first purchase: with it the child may
-          // buy sooner than it could alone.
+          // Help to buy: when a child can't yet buy alone, a parent who owns
+          // outright (and is one of the HELPING_PARENTS) gives it a share of its wealth (up to a cap), once, from
+          // 25. It goes into savings, so it may let the child buy now or soon.
           const parent = hs[i - step];
-          if (!h.helped && age < 45 && parent && parent.state === OWNED && alive(parent, year)) {
+          if (!buy && !h.helped && age >= 25 && age < 45 && parent && parent.helps && parent.state === OWNED && alive(parent, year)) {
             const gift = Math.min(p.giveCap, p.giveRate * Math.max(0, parent.savings + parent.home * P));
-            if (gift > 0 && canBuy(h.savings + gift)) {
+            if (gift > 0) {
               h.savings += gift; h.helped = true;
               gifts.push({ year, row: r, from: parent, to: h, amount: gift });
               buy = canBuy(h.savings);

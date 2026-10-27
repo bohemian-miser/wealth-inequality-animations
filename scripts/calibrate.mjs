@@ -139,6 +139,7 @@ const SPACE = [
   ['incomeSpread', 0.3, 1],
   ['incomeNoise', 0, 0.6],
   ['youngIncome', 0.4, 1],
+  ['coupleOffset', -4, 8],
   ['firstDeposit', 0.05, 0.25],
   ['priceSpread', 0, 0.6],
 ];
@@ -174,7 +175,7 @@ function nelderMead(fn, x0, { iters = 160, step = 0.6 } = {}) {
   return pts[0];
 }
 
-const start = fromParams({ saveRate: 0.214, saveHalf: 130000, giveCap: 60000, housingShare: 0.289, housingSharePre1986: 0.266, incomeSpread: 0.9, incomeNoise: 0.45, youngIncome: 0.7, firstDeposit: 0.134, priceSpread: 0.42 });
+const start = fromParams({ saveRate: 0.21, saveHalf: 136000, giveCap: 59000, housingShare: 0.289, housingSharePre1986: 0.24, incomeSpread: 0.91, incomeNoise: 0.48, youngIncome: 0.63, coupleOffset: 2.7, firstDeposit: 0.18, priceSpread: 0.37 });
 const best = nelderMead(f, start);
 const r3 = (v) => (Math.abs(v) >= 100 ? Math.round(v) : Math.round(v * 1000) / 1000);
 const fitted = Object.fromEntries(Object.entries(toParams(best.x)).map(([k, v]) => [k, r3(v)]));
@@ -210,11 +211,11 @@ const lines = [
   '  income pulled towards the age\'s middle: 1 would be one year\'s spread, 0 everyone the same.',
   `- First-home deposit: **${Math.round(100 * fit.firstDeposit)}%** of the price (fitted; first buyers put down 5–20%).`,
   `- Income variation within a row: **${fit.incomeNoise}** (fitted, sd of log income: one or two earners, careers).`,
-  `- Young incomes: at 20 a household earns **${Math.round(100 * fit.youngIncome)}%** of its row's ABS income, rising to 100% by 30 (fitted to`,
-  '  first home buyers\' age; ABS incomes for households headed by under-25s include group households).',
+  `- Young incomes: at 20 a household earns **${Math.round(100 * fit.youngIncome)}%** of its row's ABS income, rising to all of it`,
+  `  ${fit.coupleOffset >= 0 ? fit.coupleOffset + ' years after' : -fit.coupleOffset + ' years before'} that year's median age at first marriage (ABS: 22 in 1971, 30 in 2021), as couples form (fitted).`,
   `- House price spread: **${fit.priceSpread}** (fitted), the standard deviation of the log of each household's`,
   '  house price relative to the mean dwelling (where it buys).',
-  `- Help to buy: **${(100 * fit.giveRate).toFixed(0)}%** of the parent's wealth, at most **${dollars(fit.giveCap)}** (cap fitted), once, at the child's first purchase. Model help`,
+  `- Help to buy: when a child (25–44) can't yet buy alone, 40% of parents who own outright give **${(100 * fit.giveRate).toFixed(0)}%** of their wealth, at most **${dollars(fit.giveCap)}** (cap fitted), once. Model help`,
   `  2017–2019: ${dollars(giftsPerHousehold(final, 2017, 2019))} per household a year; PC, all gifts from parents: ${dollars(GIFT_TARGET)}.`, '',
   `Fit (RMSE, percentage points): Census by age ${(100 * Math.sqrt(L.groups[0])).toFixed(1)}, SIH tenure by age ${(100 * Math.sqrt(L.groups[1])).toFixed(1)},`,
   `older owners over time ${(100 * Math.sqrt(L.groups[2])).toFixed(1)}, tenure by income quintile ${(100 * Math.sqrt(L.groups[3])).toFixed(1)};`,

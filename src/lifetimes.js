@@ -17,7 +17,7 @@ import {
 } from './model.js';
 import { DATA } from './data.generated.js';
 import {
-  shownState, estateArrivals, onScreen, byYear, activeTransfers,
+  shownState, shownYear, estateArrivals, onScreen, byYear, activeTransfers,
 } from './timeline.js';
 
 const SPAN = AGE_MAX - AGE_MIN;
@@ -51,6 +51,7 @@ export function startLifetimes(canvas, chart, { onYear } = {}) {
   const estateOf = new Map(sim.bequests.map((b) => [b.from, b]));
   const arrivals = estateArrivals(sim.bequests, sim.gifts);
   const firstBuys = sim.buys.filter((e) => e.kind === 'starter' && !e.cash);
+  const helped = new Map(sim.gifts.map((g) => [g.to, g.year])); // household → year helped
 
   // One size scale for every dot, households and transfers alike.
   let maxWealth = 1;
@@ -122,10 +123,15 @@ export function startLifetimes(canvas, chart, { onYear } = {}) {
         const { st, w } = shown(h);
         if (st < 0) continue;
         const age = t - h.born;
-        const fade = estate ? 1 : Math.min(1, (h.deathAge - age) / 1.5);
+        const fade = estate ? 1 : Math.min(1, (h.deathAge - age) / 0.5);
         ctx.globalAlpha = Math.max(0, Math.min(1, (age - AGE_MIN) / 1.5, fade));
         ctx.fillStyle = COLOR[st];
         ctx.beginPath(); ctx.arc(xOfAge(age), y, radius(w), 0, Math.PI * 2); ctx.fill();
+        // Bought with family help: a gold outline, for as long as it owns.
+        if (helped.has(h) && st !== RENT && shownYear(h, t) >= helped.get(h)) {
+          ctx.strokeStyle = 'rgba(255,211,110,0.85)'; ctx.lineWidth = 1.2;
+          ctx.beginPath(); ctx.arc(xOfAge(age), y, radius(w) + 1.2, 0, Math.PI * 2); ctx.stroke();
+        }
       }
     }
     ctx.globalAlpha = 1;
@@ -134,9 +140,17 @@ export function startLifetimes(canvas, chart, { onYear } = {}) {
     // mortgages being paid off, over the last RECENT_YEARS years.
     // A row with fewer than RECENT_MIN such events has no point, and the line
     // breaks there.
+    // Each point is the median age of the row's events, pooled with its
+    // neighbouring rows at half weight: a row alone has too few to be steady.
     const recent = (events, row) => {
-      const ages = events.filter((e) => e.row === row && e.year <= t && e.year > t - RECENT_YEARS).map((e) => e.age);
-      return ages.length >= RECENT_MIN ? ages.reduce((a, b) => a + b, 0) / ages.length : null;
+      const inWindow = events.filter((e) => e.year <= t && e.year > t - RECENT_YEARS && Math.abs(e.row - row) <= 1);
+      const own = inWindow.filter((e) => e.row === row).length;
+      if (own < RECENT_MIN) return null;
+      const weighted = inWindow.map((e) => [e.age, e.row === row ? 1 : 0.5]).sort((a, b) => a[0] - b[0]);
+      const half = weighted.reduce((a, [, w]) => a + w, 0) / 2;
+      let acc = 0;
+      for (const [age, w] of weighted) { acc += w; if (acc >= half) return age; }
+      return null;
     };
     // First homes bought with a mortgage (not cash from an estate).
     for (const [events, color, dash] of [[firstBuys, 'rgba(120,160,255,0.85)', [5, 4]], [sim.payoffs, 'rgba(110,225,160,0.9)', []]]) {
@@ -246,11 +260,15 @@ export function startLifetimes(canvas, chart, { onYear } = {}) {
     cctx.fillStyle = 'rgba(255,255,255,0.03)';
     cctx.fillRect(xOf(LAST_PRICE_YEAR), top0, xOf(END) - xOf(LAST_PRICE_YEAR), CH - pad.t - pad.b);
     cctx.fillStyle = 'rgba(220,226,240,0.6)'; cctx.textAlign = 'left';
-    cctx.fillText(CW < 640 ? 'what-if' : 'what-if: prices and rates held after 2025', xOf(LAST_PRICE_YEAR) + 6, top0 + 8);
+    cctx.fillText(CW < 640 ? 'what-if' : 'what-if: prices, rates and incomes held after 2025', xOf(LAST_PRICE_YEAR) + 6, top0 + 8);
     if (CW >= 640) {
       cctx.fillStyle = 'rgba(220,226,240,0.45)';
-      cctx.fillText('ownership still falls: each new generation meets the 2025 price', xOf(LAST_PRICE_YEAR) + 6, bot0 + hBot - 8);
+      cctx.fillText('ownership keeps falling as people who bought cheaply age past 39', xOf(LAST_PRICE_YEAR) + 6, bot0 + hBot - 8);
     }
+    cctx.fillStyle = 'rgba(220,226,240,0.5)'; cctx.textAlign = 'left'; cctx.font = '10px system-ui, sans-serif';
+    cctx.fillText('house price', pad.l + 4, top0 + 8);
+    cctx.fillText('who owns', pad.l + 4, bot0 + 8);
+    cctx.font = '11px system-ui, sans-serif';
     // The shares are averaged over the last 5 years (households are born every
     // 1.25 years in a row, which otherwise adds noise).
     const series = [
@@ -282,9 +300,16 @@ export function startLifetimes(canvas, chart, { onYear } = {}) {
     // Labels in the right margin, level with each line's latest value.
     if (CW >= 640) {
       cctx.font = '10.5px system-ui, sans-serif'; cctx.textAlign = 'left';
-      for (const sr of series) { cctx.fillStyle = sr.color; cctx.fillText(sr.label, pad.l + w + 8, sr.at(upto)); }
-      cctx.fillStyle = 'rgb(120,160,255)';
-      cctx.fillText('● Census', pad.l + w + 8, Math.min(bot0 + hBot - 4, series[1].at(upto) + 13));
+      cctx.fillStyle = series[0].color; cctx.fillText(series[0].label, pad.l + w + 8, series[0].at(upto));
+      // The two ownership labels (and the Census key) kept at least 13px apart.
+      const labels = [[series[1].label, series[1].color, series[1].at(upto)], [series[2].label, series[2].color, series[2].at(upto)]]
+        .sort((a, b) => a[2] - b[2]);
+      labels.push(['● Census (25–39s)', series[1].color, 0]);
+      let yPrev = -Infinity;
+      for (const l of labels) {
+        const y = Math.min(bot0 + hBot - 4, Math.max(l[2] || yPrev + 13, yPrev + 13));
+        cctx.fillStyle = l[1]; cctx.fillText(l[0], pad.l + w + 8, y); yPrev = y;
+      }
       cctx.font = '11px system-ui, sans-serif';
     }
     cctx.strokeStyle = 'rgba(255,255,255,0.5)'; cctx.lineWidth = 1;

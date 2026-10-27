@@ -19,6 +19,9 @@ Inputs (data/raw/, downloaded as published, CC BY 4.0):
   abs-life-tables-2022-2024.xlsx       ABS life tables 2022–2024
   abs-erp-by-age-3101059.xlsx          ABS estimated resident population by age, 1971–2025
   abs-household-size.csv               persons per household by Census year (sources in the file)
+  abs-median-age-first-marriage.csv    ABS median age at first marriage (sources in the file; files in abs-marriage/)
+  jst-macrohistory-R6.dta              Jordà–Schularick–Taylor Macrohistory Database, release 6 (Stata file)
+  jst-aus-house-price-ratios.csv       its Australian house price ratios, 1900–1980, derived from the .dta
 
 Run: pip install -r scripts/requirements.txt && python3 scripts/build_data.py
 """
@@ -283,6 +286,7 @@ mean_disp = nums(t101[find(t101, 'Disposable income')])[:7]
 mean_eq = nums(t101[find(t101, 'Equivalised disposable income')])[:7]
 housing_costs = nums(t101[find(t101, 'Housing costs')])[:7]
 median_disp_all = nums(t101[find(t101, 'Disposable income', find(t101, 'Median income'))])[8]
+median_gross_all = nums(t101[find(t101, 'Gross income', find(t101, 'Median income'))])[8]
 eq_pct = [nums(t101[find(t101, f'{10 * k}th (P{10 * k})')])[:7] for k in range(1, 10)]
 income_deciles = []
 for b in range(7):
@@ -353,6 +357,11 @@ real_by_year = {y: (1 + nominal[y]) / (cpi[y] / cpi[y - 1]) - 1
 real_rate = sum(real_by_year.values()) / len(real_by_year)
 # Every year the RBA and CPI series both cover (from 1960), for the model's
 # year-by-year rates.
+# Before the RBA series (1959), home lending rates were regulated and barely
+# moved: hold the first year's nominal rate, deflated by each year's CPI.
+first_rate = min(nominal)
+for y in range(1923, first_rate):
+    nominal[y] = nominal[first_rate]
 real_rate_by_year = {y: round((1 + nominal[y]) / (cpi[y] / cpi[y - 1]) - 1, 4)
                      for y in sorted(nominal) if y in cpi and y - 1 in cpi}
 paid_nominal = sum(nominal[y] for y in real_by_year) / len(real_by_year)
@@ -476,8 +485,27 @@ def hh_at(y):
 # The OECD ratio divides by income per head. Per household, income is that
 # times persons per household, so the price at 2019-20 household incomes is
 # the per-head figure × (2019-20 household size ÷ that year's).
+# Before the OECD series (1970), the Macrohistory Database's house price to
+# GDP per head ratio (Jordà, Schularick and Taylor, release 6; its Australian
+# prices are Stapledon's Sydney–Melbourne index), relative to 1970, carries
+# the per-head ratio back to 1950. 1942–49 prices were legally pegged, so
+# years before 1950 take the 1951–55 average.
+with open(os.path.join(RAW, 'jst-aus-house-price-ratios.csv')) as f:
+    jst = {int(r['year']): float(r['hp_gdppc_rel']) for r in csv.DictReader(f)}
+first_oecd = min(price_by_year_per_head)
+for y in range(1950, first_oecd):
+    price_by_year_per_head[y] = round(price_by_year_per_head[first_oecd] * jst[y] / jst[first_oecd])
+early = sum(jst[y] for y in range(1951, 1956)) / 5
+for y in range(1900, 1950):
+    price_by_year_per_head[y] = round(price_by_year_per_head[first_oecd] * early / jst[first_oecd])
+price_by_year_per_head = dict(sorted(price_by_year_per_head.items()))
 hh_base = (hh_at(2019) + hh_at(2020)) / 2
 price_by_year = {y: round(v * hh_base / hh_at(y)) for y, v in price_by_year_per_head.items()}
+
+# Median age at first marriage (ABS; men and women averaged; sources in the
+# CSV): when young households typically become couples, by year.
+with open(os.path.join(RAW, 'abs-median-age-first-marriage.csv')) as f:
+    marriage_age = {int(r['year']): round((float(r['men']) + float(r['women'])) / 2, 2) for r in csv.DictReader(f)}
 
 # ------------------------------------------------------------ output -----
 
@@ -510,6 +538,7 @@ data = {
     'persistenceByAge': persistence,
     'incomeDeciles': income_deciles,
     'medianDisposable': round(median_disp_all * WEEKS),
+    'medianGross': round(median_gross_all * WEEKS),
     'housingCostShareByAge': [round(h / d, 4) for h, d in zip(housing_costs, mean_disp)],
     'outrightByAge': [v / 100 for v in outright_by_age],
     'mortgagedByAge': [v / 100 for v in mortgaged_by_age],
@@ -517,6 +546,7 @@ data = {
     'priceByYear': price_by_year,
     'priceByYearPerHead': price_by_year_per_head,
     'householdSize': {y: round(hh_at(y), 3) for y in sorted(price_by_year)},
+    'marriageAge': marriage_age,
     'popGroups': POP_GROUPS,
     'popShareByYear': pop_share,
     'rateLongRun': round(rate_long_run, 4),

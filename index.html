@@ -76,7 +76,7 @@
   </header>
   <div class="now">
     <span class="year" id="year">1970</span>
-    <span>A home costs <b id="nowRatio">–</b> a middle household's after-tax income (<span id="nowPrice">–</span> in 2019-20 terms)</span>
+    <span>An average home costs <b id="nowRatio">–</b> a middle household's after-tax income (<span id="nowGross">–</span> its pre-tax income; <span id="nowPrice">–</span> in 2019-20 terms)</span>
     <span>25–39s who own <b id="nowYoung" class="mortgage">–</b></span>
     <span>Over 65s' share of owned homes <b id="nowOld" class="pink">–</b></span>
   </div>
@@ -85,12 +85,13 @@
     <span><span class="sw" style="background:var(--rent)"></span>renting, saving a deposit</span>
     <span><span class="sw" style="background:var(--mortgage)"></span>paying a mortgage</span>
     <span><span class="sw" style="background:var(--owned)"></span>owns outright</span>
-    <span><span class="ln" style="border-top:2px dashed var(--mortgage)"></span>average age the row took out its first mortgage (last 15 years, 5+ buyers)</span>
+    <span><span class="ln" style="border-top:2px dashed var(--mortgage)"></span>median age the row took out its first mortgage (last 15 years, with neighbouring rows)</span>
     <span><span class="ln" style="border-top:2px solid var(--owned)"></span>…paid off its last mortgage</span>
     <span><span class="sw" style="background:var(--gold)"></span>yearly help</span>
     <span><span class="sw" style="background:var(--pink)"></span>an estate passing down (a ring as it lands)</span>
     <span>bars at right: each row now — renting · mortgage · owned</span>
     <span>a dot turning grey later in life: a couple split and sold</span>
+    <span><span class="sw" style="border:1.5px solid var(--gold)"></span>gold outline: bought with family help</span>
     <span>chart: house price (top); 25–39s who own, with the Census, and over 65s' share of owned homes (bottom); shares averaged over 5 years</span>
   </div>
   <div class="minikey" aria-hidden="true"><span class="sw" style="background:var(--rent)"></span>renting <span class="sw" style="background:var(--mortgage)"></span>mortgage <span class="sw" style="background:var(--owned)"></span>owns <span class="sw" style="background:var(--gold)"></span>help <span class="sw" style="background:var(--pink)"></span>estate</div>
@@ -123,8 +124,9 @@
         starter home, the bank's test of the first year's repayments, variable-rate repayments,
         inflation wearing the debt down (fast in the 1970s and 80s), loans repaid by 75. From 10 years
         on, a household trades up if it can, on a new 20-year loan.</li>
-      <li><b>Saving, help, estates and separation</b>: saving rises with income. A parent who owns
-        outright helps once, at the child's first purchase, with 10% of its wealth up to about $49k.
+      <li><b>Saving, help, estates and separation</b>: saving rises with income. When a child can't yet buy
+        alone, a parent who owns outright may help once (40% of parents do) with 10% of its wealth, capped;
+        about a third of first buyers get help, marked with a gold outline.
         About 30% of couples split at some point (ABS: about a third of marriages end in divorce): they
         sell, keep half the equity and rent again. An estate splits between two children; the half that
         reaches the row comes to about $4,800 per household a year, close to the PC's estimate.</li>
@@ -132,8 +134,12 @@
         and by income in 2019-20, the rise in 55–64-year-olds with a mortgage since the late 1990s, and
         first home buyers' average age (32–33, rising to 34–36). The fitted lending limit is about 29% of
         income and the first-home deposit about 17%.</li>
-      <li><b>Where it's off</b>: older households own a little too often, and young ownership bumps up
-        in the late 1990s where the Census shows a steady fall. Statistics weight households by
+      <li><b>Young households</b> earn less until couples form; the age they reach full income follows
+        ABS's median age at first marriage, which rose from 22 in 1971 to 30 in 2021. Before 1970, prices
+        follow the Macrohistory Database (Stapledon's series), and rates use 1959's regulated rate with
+        each year's inflation, so the 1950s' high inflation wore mortgages away.</li>
+      <li><b>Where it's off</b>: older households own a little too often, and there is no public housing.
+        Statistics weight households by
         Australia's real age mix each year. After 2025, prices and rates are held: a what-if, not a
         forecast.</li>
     </ul>
@@ -159,6 +165,7 @@
     $('year').textContent = s.year;
     $('nowPrice').textContent = money(s.price);
     $('nowRatio').textContent = `${(s.price / DATA.medianDisposable).toFixed(1)}×`;
+    $('nowGross').textContent = `${(s.price / DATA.medianGross).toFixed(1)}×`;
     $('nowYoung').textContent = pct(anim.smoothed(s.year, (x) => x.youngOwn / x.young));
     $('nowOld').textContent = pct(anim.smoothed(s.year, (x) => x.homesOld / x.homes));
     if (!dragging) scrub.value = s.year;
