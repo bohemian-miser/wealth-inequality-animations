@@ -111,7 +111,7 @@ three years of price growth after this survey.
 
 - Mean dwelling price 2019-20: $684,925 (quarters: $668.8k, $686.8k, $694.7k, $689.4k).
 - Mortgage rate, long-run average of the RBA standard variable rate 1970–2025: 8.78% nominal (headline). Rates actually paid (the discounted rate from 2004, the standard rate before): 8.44% nominal; less each year's CPI inflation (average 5.04%), a real rate of 3.31%, which the model uses (its money is 2019-20 dollars). Real rates by era: 1.7% before 1990 (regulated, rationed credit), 4.2% from 1990.
-- House price at 2019-20 incomes for each year's price-to-income ratio: 1970 $383k, 1985 $376k, 1995 $431k, 2005 $602k, 2015 $681k, 2024 $818k.
+- House price at 2019-20 incomes for each year's price-to-income ratio: 1970 $294k, 1985 $326k, 1995 $400k, 2005 $586k, 2015 $663k, 2024 $828k.
 
 | Income decile | 15–24 | 25–34 | 35–44 | 45–54 | 55–64 | 65–74 | 75+ |
 |---|---|---|---|---|---|---|---|

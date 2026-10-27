@@ -34,15 +34,17 @@ export function shownFraction(h, t) {
   return x - Math.floor(x);
 }
 
-// The years in which each household receives an estate.
-export function estateArrivals(bequests) {
+// The years in which each household receives an estate or help to buy (a
+// lump that should jump on landing, not ease in before it).
+export function estateArrivals(bequests, gifts = []) {
   const m = new Map();
-  for (const b of bequests) (m.get(b.to) ?? m.set(b.to, new Set()).get(b.to)).add(b.year);
+  for (const e of [...bequests, ...gifts]) (m.get(e.to) ?? m.set(e.to, new Set()).get(e.to)).add(e.year);
   return m;
 }
 
 // A household's state and wealth as drawn at time t. Wealth eases towards
-// next year's, except into a year an estate arrives (that jumps on landing).
+// next year's, except into a year an estate or help arrives (that jumps on
+// landing).
 export function shownState(h, t, arrivals) {
   const y = shownYear(h, t);
   const k = y - START;

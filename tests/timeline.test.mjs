@@ -12,7 +12,7 @@ import {
 const sim = simulate();
 const EPS = 1e-6;
 const estateOf = new Map(sim.bequests.map((b) => [b.from, b]));
-const arrivals = estateArrivals(sim.bequests);
+const arrivals = estateArrivals(sim.bequests, sim.gifts);
 
 test('phases are in [0, 1) and differ between neighbours', () => {
   const ps = new Set();
@@ -63,9 +63,10 @@ test('households never show a year after they died', () => {
   }
 });
 
-test('drawn wealth moves smoothly except when an estate lands', () => {
+test('drawn wealth moves smoothly except when an estate or help lands', () => {
   const landings = new Map();
   for (const b of sim.bequests) landings.set(b.to, [...(landings.get(b.to) ?? []), estateTiming(b).land]);
+  for (const g of sim.gifts) landings.set(g.to, [...(landings.get(g.to) ?? []), giftTiming(g).land]);
   let jumps = 0;
   for (const h of sim.rows.flat().filter((_, i) => i % 7 === 0)) {
     let prev = null;
@@ -80,7 +81,7 @@ test('drawn wealth moves smoothly except when an estate lands', () => {
       prev = w;
     }
   }
-  assert.equal(jumps, 0, `${jumps} sudden wealth jumps not explained by an estate`);
+  assert.equal(jumps, 0, `${jumps} sudden wealth jumps not explained by an estate or help`);
 });
 
 test('activeTransfers returns exactly the transfers in their window', () => {

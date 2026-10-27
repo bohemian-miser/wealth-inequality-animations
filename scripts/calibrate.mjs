@@ -75,8 +75,15 @@ function measure(sim) {
       renting: shareOf(part, (x) => x.st === RENT),
     };
   });
+  // Mean age at first purchase with a mortgage, 1996–2012.
+  const fb = sim.buys.filter((e) => e.kind === 'starter' && !e.cash && e.year >= 1996 && e.year <= 2012);
+  m.firstBuyAge = fb.length ? mean(fb.map((e) => e.age)) : 99;
   return m;
 }
+
+// ABS Housing Occupancy and Costs: first home buyers' average age was 32–33
+// in every survey from 1995-96 to 2011-12.
+const FIRST_BUY_AGE = 32.5;
 
 function loss(m) {
   const groups = [];
@@ -98,6 +105,7 @@ function loss(m) {
   const T = DATA.tenureByIncomeQuintile;
   m.quintiles.forEach((x, i) => q.push((x.outright - T.outright[i]) ** 2, (x.mortgage - T.mortgage[i]) ** 2, (x.renting - T.renting[i]) ** 2));
   groups.push(mean(q));
+  groups.push(((m.firstBuyAge - FIRST_BUY_AGE) / 40) ** 2); // 2 years off ≈ 5 points off
   return { total: mean(groups), groups };
 }
 
@@ -106,7 +114,7 @@ const giftsPerHousehold = (sim, from, to) =>
 
 // Pin the gift rate: gifts scale nearly in proportion, so rescale a few times.
 function run(params) {
-  let giveRate = params.giveRate ?? 0.01, sim;
+  let giveRate = params.giveRate ?? 0.05, sim;
   for (let k = 0; k < 3; k++) {
     sim = simulate({ ...params, giveRate });
     const g = giftsPerHousehold(sim, 2017, 2019);
@@ -127,13 +135,16 @@ const SPACE = [
   ['saveRate', 0.02, 0.5],
   ['saveFloor', 10000, 70000],
   ['housingShare', 0.25, 0.4],
+  ['housingSharePre1986', 0.15, 0.4],
   ['incomeSpread', 0.3, 1],
+  ['incomeNoise', 0, 0.6],
+  ['youngIncome', 0.4, 1],
   ['priceSpread', 0, 0.6],
 ];
 const toParams = (x) => Object.fromEntries(SPACE.map(([k, lo, hi], i) => [k, lo + (hi - lo) / (1 + Math.exp(-x[i]))]));
 const fromParams = (p) => SPACE.map(([k, lo, hi]) => { const u = (p[k] - lo) / (hi - lo); return Math.log(u / (1 - u)); });
 
-let lastGive = 0.01;
+let lastGive = 0.05;
 function f(x) {
   const params = { ...toParams(x), giveRate: lastGive };
   const { sim, giveRate } = run(params);
@@ -166,7 +177,7 @@ function nelderMead(fn, x0, { iters = 160, step = 0.6 } = {}) {
   return pts[0];
 }
 
-const start = fromParams({ saveRate: 0.15, saveFloor: 40000, housingShare: 0.3, incomeSpread: 0.6, priceSpread: 0.3 });
+const start = fromParams({ saveRate: 0.19, saveFloor: 50000, housingShare: 0.3, housingSharePre1986: 0.25, incomeSpread: 0.84, incomeNoise: 0.29, youngIncome: 0.69, priceSpread: 0.4 });
 const best = nelderMead(f, start);
 const r3 = (v) => (Math.abs(v) >= 100 ? Math.round(v) : Math.round(v * 1000) / 1000);
 const fitted = Object.fromEntries(Object.entries(toParams(best.x)).map(([k, v]) => [k, r3(v)]));
@@ -197,14 +208,20 @@ const lines = [
   `- Saving: **${(100 * fit.saveRate).toFixed(1)}%** of income above **${dollars(fit.saveFloor)}** a year, before 65 (both fitted).`,
   `- Lending limit: **${(100 * fit.housingShare).toFixed(1)}%** of income (fitted): the most a new loan's first year of`,
   '  repayments, at that year\'s nominal rate, may take. Banks\' usual rule of thumb is about 30%.',
+  `- Lending limit before 1986: **${(100 * fit.housingSharePre1986).toFixed(1)}%** (fitted): before financial deregulation`,
+  '  (1983–86) banks rationed home lending.',
   `- Income spread: **${fit.incomeSpread}** (fitted). Each lifetime-income row's income is one year's decile`,
   '  income pulled towards the age\'s middle: 1 would be one year\'s spread, 0 everyone the same.',
+  `- Income variation within a row: **${fit.incomeNoise}** (fitted, sd of log income: one or two earners, careers).`,
+  `- Young incomes: at 20 a household earns **${Math.round(100 * fit.youngIncome)}%** of its row's ABS income, rising to 100% by 30 (fitted to`,
+  '  first home buyers\' age; ABS incomes for households headed by under-25s include group households).',
   `- House price spread: **${fit.priceSpread}** (fitted), the standard deviation of the log of each household's`,
   '  house price relative to the mean dwelling (where it buys).',
-  `- Gift rate: **${(100 * fit.giveRate).toFixed(2)}%** of the parent's wealth a year (pinned). Model gifts`,
+  `- Help to buy: **${(100 * fit.giveRate).toFixed(1)}%** of the parent's wealth, once, when it makes a purchase possible (pinned). Model gifts`,
   `  2017–2019: ${dollars(giftsPerHousehold(final, 2017, 2019))} per household a year; PC: ${dollars(GIFT_TARGET)}.`, '',
   `Fit (RMSE, percentage points): Census by age ${(100 * Math.sqrt(L.groups[0])).toFixed(1)}, SIH tenure by age ${(100 * Math.sqrt(L.groups[1])).toFixed(1)},`,
-  `older owners over time ${(100 * Math.sqrt(L.groups[2])).toFixed(1)}, tenure by income quintile ${(100 * Math.sqrt(L.groups[3])).toFixed(1)}.`, '',
+  `older owners over time ${(100 * Math.sqrt(L.groups[2])).toFixed(1)}, tenure by income quintile ${(100 * Math.sqrt(L.groups[3])).toFixed(1)};`,
+  `first home buyers' mean age 1996–2012 ${m.firstBuyAge.toFixed(1)} (ABS 32–33).`, '',
   '## Census home ownership by age (model / Census)', '',
   '| Age | ' + CENSUS_YEARS.join(' | ') + ' |', '|---' + '|---'.repeat(CENSUS_YEARS.length) + '|',
   ...Object.keys(DATA.censusOwnByAge).map((g) => `| ${g} | ` + CENSUS_YEARS.map((y) => `${pct(m.census[g][y])} / ${pct(DATA.censusOwnByAge[g][y])}`).join(' | ') + ' |'),
@@ -243,7 +260,7 @@ const lines = [
   }),
   '',
   '## History', '',
-  "| Year | House price | Under 40s owning | Over 65s' share of owned homes |", '|---|---|---|---|',
+  "| Year | House price | 25–39s owning | Over 65s' share of owned homes |", '|---|---|---|---|',
   ...[1970, 1980, 1990, 2000, 2010, 2020, 2030, 2050, 2070].map((y) => {
     const s = final.stats[y - START];
     return `| ${y} | ${k(s.price)} | ${pct(s.youngOwn / s.young)} | ${pct(s.homesOld / s.homes)} |`;

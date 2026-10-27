@@ -45,6 +45,9 @@ export const FIRST_DEPOSIT = 0.1; // for a first home (with lenders' mortgage in
 export const STARTER = 0.7; // a first home's price, as a share of the household's house price
 export const TRADE_UP_AFTER = 10; // years before trading up
 export const LOAN_TERM = 30;
+export const LAST_LOAN_AGE = 75; // lenders want a loan repaid by about this age
+export const MIN_TERM = 5;
+export const HEIR_SHARE = 0.5; // an estate splits between two children; one is in the row
 // Mortgage rates by year (RBA rates actually paid; real = less that year's
 // CPI inflation). Before the series, its first year; after it, the averages
 // from 1990 (a what-if).
@@ -62,9 +65,12 @@ export function ratesAt(year) {
 export const DEFAULTS = {
   saveRate: 0.15, // of income above the floor
   saveFloor: 40000, // income a household needs before it can save
-  housingShare: 0.18,
-  giveRate: 0.01, // of the parent's wealth, a year
+  housingShare: 0.3,
+  housingSharePre1986: 0.3, // before financial deregulation, credit was rationed
+  giveRate: 0.05, // of the parent's wealth, given once as help to buy
   incomeSpread: 1, // 1 = one year's income spread; smaller = lifetime
+  incomeNoise: 0, // sd of log income factor within a row (one or two earners, careers)
+  youngIncome: 1, // income at 20 as a share of the row's, rising to 1 by 30
   priceSpread: 0, // sd of log house price factor
   ...CALIBRATION,
 };
@@ -161,11 +167,13 @@ export function simulate(opts = {}) {
     let k = 0;
     // Rows are staggered a fraction of SPACING apart so they don't move in lockstep.
     for (let born = START - AGE_MAX + (r * SPACING) / ROWS; born <= END - AGE_MIN; born += SPACING, k++) {
-      const z = phiInv(draw(k, r, 2));
+      const z = phiInv(draw(k, r, 2)), zi = phiInv(draw(k, r, 3));
       hs.push({
         row: r, born, savings: 0, debt: 0, term: 0, state: RENT, home: 0, homeSince: null, died: null,
+        helped: false,
         deathAge: deathAgeFor(draw(k, r, 1)),
         priceFactor: Math.exp(p.priceSpread * z - (p.priceSpread * p.priceSpread) / 2),
+        incomeFactor: Math.exp(p.incomeNoise * zi - (p.incomeNoise * p.incomeNoise) / 2),
         st: new Int8Array(nYears).fill(-1), wealth: new Float32Array(nYears),
       });
     }
@@ -192,7 +200,7 @@ export function simulate(opts = {}) {
         if (h.died !== null || age < h.deathAge) continue;
         if (age < AGE_MIN) continue;
         h.died = year;
-        const estate = Math.max(0, h.savings + h.home * P - h.debt);
+        const estate = Math.max(0, h.savings + h.home * P - h.debt) * HEIR_SHARE;
         h.savings = 0; h.debt = 0; h.home = 0;
         const kid = hs[i + step];
         if (!alive(kid, year) || estate <= 0) continue;
@@ -203,31 +211,42 @@ export function simulate(opts = {}) {
         const h = hs[i];
         if (!alive(h, year)) continue;
         const age = year - h.born;
-        const y = income(r, age);
-        const parent = hs[i - step];
-        if (parent && parent.state === OWNED && h.state !== OWNED && alive(parent, year)) {
-          const gift = p.giveRate * Math.max(0, parent.savings + parent.home * P);
-          if (gift > 0) {
-            h.savings += gift;
-            gifts.push({ year, row: r, from: parent, to: h, amount: gift });
-          }
-        }
+        const young = age < 30 ? p.youngIncome + ((1 - p.youngIncome) * (age - AGE_MIN)) / 10 : 1;
+        const y = income(r, age) * h.incomeFactor * young;
         if (age < RETIRE) h.savings += p.saveRate * Math.max(0, y - p.saveFloor);
         else h.savings -= h.savings / Math.max(1, AGE_MAX - age);
 
         const own = h.priceFactor * P; // this household's house, at this year's prices
         // The bank's test: the first year's repayments, at this year's nominal
-        // rate, within the lending limit.
-        const fits = (loan, term) => annuity(loan, R.nominal, term) <= p.housingShare * y;
+        // rate, within the lending limit; and the loan repaid by LAST_LOAN_AGE.
+        const termFor = (max) => Math.min(max, Math.floor(LAST_LOAN_AGE - age));
+        const limit = year < 1986 ? p.housingSharePre1986 : p.housingShare;
+        const fits = (loan, term) => loan <= 0 || (term >= MIN_TERM && annuity(loan, R.nominal, term) <= limit * y);
         if (h.state === RENT) {
           // First home: a starter; a household that can pay cash for its full
           // house buys that.
-          const size = h.savings >= own ? 1 : STARTER;
-          const price = size * own;
-          const loan = Math.max(0, price - h.savings);
-          if (h.savings >= FIRST_DEPOSIT * price && fits(loan, LOAN_TERM)) {
+          const canBuy = (savings) => {
+            const size = savings >= own ? 1 : STARTER;
+            const price = size * own;
+            const loan = Math.max(0, price - savings);
+            return savings >= FIRST_DEPOSIT * price && fits(loan, termFor(LOAN_TERM)) ? { size, price, loan } : null;
+          };
+          let buy = canBuy(h.savings);
+          // Help to buy: a parent who owns outright gives a share of its
+          // wealth once, when that is what makes the purchase possible.
+          const parent = hs[i - step];
+          if (!buy && !h.helped && age < 45 && parent && parent.state === OWNED && alive(parent, year)) {
+            const gift = p.giveRate * Math.max(0, parent.savings + parent.home * P);
+            if (gift > 0 && canBuy(h.savings + gift)) {
+              h.savings += gift; h.helped = true;
+              gifts.push({ year, row: r, from: parent, to: h, amount: gift });
+              buy = canBuy(h.savings);
+            }
+          }
+          if (buy) {
+            const { size, price, loan } = buy;
             h.savings = Math.max(0, h.savings - price);
-            h.debt = loan; h.term = LOAN_TERM;
+            h.debt = loan; h.term = termFor(LOAN_TERM);
             h.home = size * h.priceFactor; h.homeSince = year;
             h.state = loan > 0 ? MORTGAGE : OWNED;
             buys.push({ year, row: r, age, kind: 'starter', cash: loan === 0 });
@@ -239,7 +258,7 @@ export function simulate(opts = {}) {
           const gap = (h.priceFactor - h.home) * P;
           const fromSavings = Math.min(h.savings, gap);
           const loan = h.debt + gap - fromSavings;
-          const term = LOAN_TERM - TRADE_UP_AFTER;
+          const term = termFor(LOAN_TERM - TRADE_UP_AFTER);
           if (fits(loan, term)) {
             h.savings -= fromSavings;
             h.debt = loan; h.term = term;
@@ -271,11 +290,30 @@ export function simulate(opts = {}) {
   return { rows, gifts, bequests, buys, payoffs, stats, income, params: p };
 }
 
+// The model has the same number of households born every year; Australia
+// doesn't. Statistics weight each household by its age group's share of the
+// real adult population that year (ABS), over its share in the model.
+function popWeights(rows, year, yi) {
+  const groups = DATA.popGroups;
+  const years = Object.keys(DATA.popShareByYear).map(Number);
+  const real = DATA.popShareByYear[Math.min(Math.max(...years), Math.max(Math.min(...years), year))];
+  const count = groups.map(() => 0);
+  let total = 0;
+  for (const hs of rows) for (const h of hs) {
+    if (h.st[yi] < 0) continue;
+    const g = groups.findIndex(([lo, hi]) => year - h.born >= lo && year - h.born < hi);
+    if (g >= 0) { count[g]++; total++; }
+  }
+  return count.map((c, g) => (c ? real[g] / (c / total) : 0));
+}
+const groupOf = (age) => DATA.popGroups.findIndex(([lo, hi]) => age >= lo && age < hi);
+
 function yearStats(rows, year, yi, P) {
   const s = {
     year, price: P, own: [], outright: [], n: 0, homes: 0, homesOld: 0, young: 0, youngOwn: 0,
     gifts: 0, bequests: 0,
   };
+  const w = popWeights(rows, year, yi);
   const n = BANDS.map(() => [0, 0, 0]);
   for (const hs of rows) {
     for (const h of hs) {
@@ -285,8 +323,9 @@ function yearStats(rows, year, yi, P) {
       const age = year - h.born;
       const b = BANDS.findIndex(([lo, hi]) => age >= lo && age < hi);
       n[b][0]++; n[b][1] += st !== RENT; n[b][2] += st === OWNED;
-      if (st !== RENT) { s.homes++; if (age >= RETIRE) s.homesOld++; }
-      if (age < 40) { s.young++; s.youngOwn += st !== RENT; }
+      const wt = w[groupOf(age)] ?? 0;
+      if (st !== RENT) { s.homes += wt; if (age >= RETIRE) s.homesOld += wt; }
+      if (age >= 25 && age < 40) { s.young += wt; s.youngOwn += (st !== RENT) * wt; } // Census's 25–39
     }
   }
   s.own = n.map(([t, o]) => (t ? o / t : 0));

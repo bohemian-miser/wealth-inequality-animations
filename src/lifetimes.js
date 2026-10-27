@@ -15,6 +15,7 @@ import {
   AGE_MIN, AGE_MAX, ROWS, SPACING, START, SHOW_FROM, END, LAST_PRICE_YEAR,
   RENT, MORTGAGE, OWNED, simulate,
 } from './model.js';
+import { DATA } from './data.generated.js';
 import {
   shownState, estateArrivals, onScreen, byYear, activeTransfers,
 } from './timeline.js';
@@ -22,7 +23,7 @@ import {
 const SPAN = AGE_MAX - AGE_MIN;
 const HOLD_YEARS = 0.5; // an estate's ring on landing, in model years
 const RECENT_YEARS = 10; // the curves average the last this many years' events...
-const RECENT_MIN = 3; // ...where there are at least this many
+const RECENT_MIN = 4; // ...where there are at least this many
 
 export const COLOR = {
   [RENT]: 'rgb(120,128,150)',
@@ -48,7 +49,7 @@ export function startLifetimes(canvas, chart, { onYear } = {}) {
 
   const gifts = byYear(sim.gifts), bequests = byYear(sim.bequests);
   const estateOf = new Map(sim.bequests.map((b) => [b.from, b]));
-  const arrivals = estateArrivals(sim.bequests);
+  const arrivals = estateArrivals(sim.bequests, sim.gifts);
   const firstBuys = sim.buys.filter((e) => e.kind === 'starter' && !e.cash);
 
   // One size scale for every dot, households and transfers alike.
@@ -260,6 +261,19 @@ export function startLifetimes(canvas, chart, { onYear } = {}) {
       cctx.stroke();
       cctx.beginPath(); cctx.arc(xOf(upto), yAt(upto), 2.5, 0, Math.PI * 2); cctx.fill();
     }
+    // Census: home ownership at 25–39 (the three 5-year groups, averaged).
+    cctx.fillStyle = 'rgb(120,160,255)';
+    for (const y of Object.keys(DATA.censusOwnByAge['25–29']).map(Number)) {
+      if (y < SHOW_FROM || y > upto) continue;
+      const v = (DATA.censusOwnByAge['25–29'][y] + DATA.censusOwnByAge['30–34'][y] + DATA.censusOwnByAge['35–39'][y]) / 3;
+      cctx.strokeStyle = 'rgba(13,16,32,1)'; cctx.lineWidth = 1.5;
+      cctx.beginPath(); cctx.arc(xOf(y), yOfPct(v), 3.5, 0, Math.PI * 2); cctx.fill(); cctx.stroke();
+    }
+    // Why young ownership keeps falling with prices held: every new cohort meets the 2025 price.
+    if (t > LAST_PRICE_YEAR + 3) {
+      cctx.fillStyle = 'rgba(220,226,240,0.5)'; cctx.textAlign = 'left';
+      cctx.fillText('each new generation meets the 2025 price', xOf(LAST_PRICE_YEAR) + 6, pad.t + 23);
+    }
     cctx.strokeStyle = 'rgba(255,255,255,0.5)'; cctx.lineWidth = 1;
     cctx.beginPath(); cctx.moveTo(xOf(t), pad.t); cctx.lineTo(xOf(t), pad.t + h); cctx.stroke();
   }
@@ -288,5 +302,12 @@ export function startLifetimes(canvas, chart, { onYear } = {}) {
     setPaused(p) { paused = p; },
     setSpeed(v) { if (Number.isFinite(v) && v > 0) speed = v; },
     ended: () => t >= END,
+    radiusFor: (w) => radius(w),
+    // A statistic averaged over the 5 years to `year` (as the chart draws it).
+    smoothed(year, f) {
+      let sum = 0, n = 0;
+      for (let k = Math.max(SHOW_FROM, year - 4); k <= year; k++) { sum += f(sim.stats[k - START]); n++; }
+      return sum / n;
+    },
   };
 }

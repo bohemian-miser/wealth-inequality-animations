@@ -5,46 +5,52 @@ four groups of targets at once, weighted equally (root-mean-square error shown p
 
 ## Parameters
 
-- Saving: **18.9%** of income above **$54,342** a year, before 65 (both fitted).
-- Lending limit: **25.1%** of income (fitted): the most a new loan's first year of
+- Saving: **17.2%** of income above **$53,457** a year, before 65 (both fitted).
+- Lending limit: **30.6%** of income (fitted): the most a new loan's first year of
   repayments, at that year's nominal rate, may take. Banks' usual rule of thumb is about 30%.
-- Income spread: **0.97** (fitted). Each lifetime-income row's income is one year's decile
+- Lending limit before 1986: **26.0%** (fitted): before financial deregulation
+  (1983–86) banks rationed home lending.
+- Income spread: **0.863** (fitted). Each lifetime-income row's income is one year's decile
   income pulled towards the age's middle: 1 would be one year's spread, 0 everyone the same.
-- House price spread: **0.474** (fitted), the standard deviation of the log of each household's
+- Income variation within a row: **0.321** (fitted, sd of log income: one or two earners, careers).
+- Young incomes: at 20 a household earns **68%** of its row's ABS income, rising to 100% by 30 (fitted to
+  first home buyers' age; ABS incomes for households headed by under-25s include group households).
+- House price spread: **0.426** (fitted), the standard deviation of the log of each household's
   house price relative to the mean dwelling (where it buys).
-- Gift rate: **0.26%** of the parent's wealth a year (pinned). Model gifts
-  2017–2019: $1,213 per household a year; PC: $1,214.
+- Help to buy: **13.4%** of the parent's wealth, once, when it makes a purchase possible (pinned). Model gifts
+  2017–2019: $872 per household a year; PC: $1,214.
 
-Fit (RMSE, percentage points): Census by age 5.0, SIH tenure by age 6.5,
-older owners over time 11.9, tenure by income quintile 10.0.
+Fit (RMSE, percentage points): Census by age 4.1, SIH tenure by age 7.4,
+older owners over time 14.2, tenure by income quintile 9.6;
+first home buyers' mean age 1996–2012 31.0 (ABS 32–33).
 
 ## Census home ownership by age (model / Census)
 
 | Age | 1981 | 1986 | 1991 | 1996 | 2001 | 2006 | 2011 | 2016 | 2021 |
 |---|---|---|---|---|---|---|---|---|---|
-| 25–29 | 43% / 53% | 40% / 51% | 33% / 46% | 45% / 44% | 48% / 43% | 40% / 43% | 43% / 41% | 43% / 37% | 43% / 36% |
-| 30–34 | 60% / 68% | 57% / 65% | 48% / 59% | 57% / 59% | 63% / 57% | 53% / 57% | 53% / 54% | 53% / 50% | 53% / 50% |
-| 35–39 | 65% / 74% | 65% / 72% | 57% / 69% | 70% / 67% | 68% / 66% | 63% / 65% | 60% / 62% | 55% / 59% | 57% / 59% |
-| 40–44 | 75% / 77% | 65% / 76% | 65% / 75% | 65% / 73% | 70% / 72% | 70% / 71% | 70% / 68% | 65% / 65% | 65% / 65% |
-| 45–49 | 75% / 78% | 75% / 79% | 68% / 78% | 75% / 78% | 75% / 76% | 70% / 75% | 70% / 72% | 73% / 70% | 73% / 69% |
-| 50–54 | 80% / 79% | 80% / 80% | 78% / 80% | 75% / 80% | 78% / 80% | 78% / 78% | 73% / 76% | 73% / 74% | 75% / 72% |
-| 55–59 | 80% / 81% | 80% / 81% | 83% / 82% | 80% / 82% | 80% / 82% | 80% / 81% | 80% / 79% | 78% / 77% | 78% / 76% |
-| 60–64 | 85% / 81% | 83% / 83% | 83% / 83% | 85% / 83% | 85% / 83% | 83% / 82% | 83% / 81% | 83% / 79% | 85% / 78% |
-| 65–69 | 85% / 80% | 87% / 83% | 88% / 83% | 87% / 84% | 88% / 83% | 87% / 83% | 85% / 83% | 88% / 82% | 88% / 81% |
-| 70–74 | 87% / 79% | 84% / 81% | 87% / 82% | 87% / 84% | 86% / 83% | 87% / 82% | 86% / 82% | 86% / 83% | 89% / 82% |
-| 75–79 | 84% / 76% | 86% / 79% | 84% / 80% | 86% / 82% | 86% / 83% | 86% / 82% | 86% / 82% | 86% / 82% | 85% / 82% |
+| 25–29 | 48% / 53% | 43% / 51% | 40% / 46% | 45% / 44% | 48% / 43% | 40% / 43% | 38% / 41% | 38% / 37% | 35% / 36% |
+| 30–34 | 70% / 68% | 68% / 65% | 55% / 59% | 60% / 59% | 63% / 57% | 60% / 57% | 57% / 54% | 55% / 50% | 55% / 50% |
+| 35–39 | 75% / 74% | 75% / 72% | 73% / 69% | 73% / 67% | 70% / 66% | 68% / 65% | 68% / 62% | 65% / 59% | 63% / 59% |
+| 40–44 | 80% / 77% | 75% / 76% | 75% / 75% | 73% / 73% | 75% / 72% | 73% / 71% | 75% / 68% | 73% / 65% | 70% / 65% |
+| 45–49 | 83% / 78% | 80% / 79% | 75% / 78% | 75% / 78% | 75% / 76% | 75% / 75% | 73% / 72% | 78% / 70% | 75% / 69% |
+| 50–54 | 80% / 79% | 83% / 80% | 80% / 80% | 78% / 80% | 80% / 80% | 75% / 78% | 78% / 76% | 75% / 74% | 78% / 72% |
+| 55–59 | 80% / 81% | 80% / 81% | 83% / 82% | 83% / 82% | 80% / 82% | 80% / 81% | 80% / 79% | 78% / 77% | 78% / 76% |
+| 60–64 | 85% / 81% | 80% / 83% | 80% / 83% | 83% / 83% | 85% / 83% | 83% / 82% | 88% / 81% | 85% / 79% | 83% / 78% |
+| 65–69 | 87% / 80% | 85% / 83% | 80% / 83% | 79% / 84% | 83% / 83% | 85% / 83% | 83% / 83% | 88% / 82% | 85% / 81% |
+| 70–74 | 89% / 79% | 87% / 81% | 84% / 82% | 79% / 84% | 78% / 83% | 82% / 82% | 84% / 82% | 84% / 83% | 89% / 82% |
+| 75–79 | 86% / 76% | 89% / 79% | 86% / 80% | 83% / 82% | 78% / 83% | 78% / 82% | 81% / 82% | 83% / 82% | 82% / 82% |
 
 ## Tenure by age, 2019-20 (model / ABS)
 
 | Age band | Renting | Mortgaged | Outright |
 |---|---|---|---|
-| 15–24 | 89% / 89% | 11% / 9% | 0% / 2% |
-| 25–34 | 52% / 59% | 48% / 38% | 0% / 3% |
-| 35–44 | 37% / 43% | 63% / 51% | 0% / 5% |
-| 45–54 | 26% / 28% | 67% / 57% | 8% / 15% |
-| 55–64 | 20% / 21% | 32% / 43% | 48% / 36% |
-| 65–74 | 12% / 19% | 17% / 13% | 70% / 68% |
-| 75+ | 15% / 17% | 5% / 4% | 81% / 79% |
+| 15–24 | 91% / 89% | 9% / 9% | 0% / 2% |
+| 25–34 | 51% / 59% | 49% / 38% | 0% / 3% |
+| 35–44 | 34% / 43% | 63% / 51% | 3% / 5% |
+| 45–54 | 24% / 28% | 68% / 57% | 9% / 15% |
+| 55–64 | 20% / 21% | 28% / 43% | 52% / 36% |
+| 65–74 | 14% / 19% | 14% / 13% | 72% / 68% |
+| 75+ | 20% / 17% | 0% / 4% | 80% / 79% |
 
 ABS renting here includes its "other" tenure (2–6%).
 
@@ -52,17 +58,17 @@ ABS renting here includes its "other" tenure (2–6%).
 
 | Year | 45–54 mortgaged | 45–54 outright | 55–64 mortgaged | 55–64 outright |
 |---|---|---|---|---|
-| 1997-98 | 59% / 40% | 19% / 43% | 15% / 17% | 66% / 68% |
-| 2000-01 | 63% / 41% | 14% / 39% | 19% / 20% | 64% / 64% |
-| 2002-03 | 64% / 46% | 11% / 34% | 20% / 20% | 61% / 62% |
-| 2005-06 | 61% / 49% | 13% / 29% | 21% / 28% | 60% / 54% |
-| 2007-08 | 59% / 52% | 14% / 24% | 20% / 30% | 61% / 53% |
-| 2009-10 | 60% / 52% | 13% / 24% | 20% / 31% | 60% / 50% |
-| 2011-12 | 60% / 53% | 13% / 22% | 25% / 35% | 54% / 45% |
-| 2013-14 | 59% / 53% | 14% / 21% | 20% / 36% | 59% / 45% |
-| 2015-16 | 63% / 56% | 10% / 17% | 28% / 38% | 53% / 42% |
-| 2017-18 | 63% / 55% | 9% / 17% | 28% / 40% | 54% / 37% |
-| 2019-20 | 68% / 57% | 8% / 15% | 34% / 43% | 46% / 36% |
+| 1997-98 | 63% / 40% | 14% / 43% | 23% / 17% | 61% / 68% |
+| 2000-01 | 69% / 41% | 9% / 39% | 20% / 20% | 63% / 64% |
+| 2002-03 | 68% / 46% | 9% / 34% | 24% / 20% | 59% / 62% |
+| 2005-06 | 66% / 49% | 9% / 29% | 23% / 28% | 59% / 54% |
+| 2007-08 | 66% / 52% | 9% / 24% | 21% / 30% | 59% / 53% |
+| 2009-10 | 66% / 52% | 10% / 24% | 23% / 31% | 59% / 50% |
+| 2011-12 | 68% / 53% | 10% / 22% | 24% / 35% | 56% / 45% |
+| 2013-14 | 64% / 53% | 14% / 21% | 23% / 36% | 60% / 45% |
+| 2015-16 | 65% / 56% | 11% / 17% | 28% / 38% | 54% / 42% |
+| 2017-18 | 66% / 55% | 11% / 17% | 26% / 40% | 53% / 37% |
+| 2019-20 | 68% / 57% | 9% / 15% | 29% / 43% | 51% / 36% |
 
 ## Tenure by income quintile, 2019-20 (model / ABS)
 
@@ -70,37 +76,37 @@ Model quintiles rank households by current household income; ABS by equivalised 
 
 | Quintile | Renting | Mortgaged | Outright |
 |---|---|---|---|
-| 1 | 50% / 36% | 7% / 17% | 42% / 44% |
-| 2 | 39% / 34% | 17% / 28% | 43% / 35% |
-| 3 | 38% / 33% | 33% / 40% | 29% / 24% |
-| 4 | 21% / 29% | 53% / 50% | 26% / 19% |
-| 5 | 3% / 25% | 68% / 53% | 29% / 21% |
+| 1 | 48% / 36% | 7% / 17% | 45% / 44% |
+| 2 | 42% / 34% | 17% / 28% | 40% / 35% |
+| 3 | 37% / 33% | 32% / 40% | 31% / 24% |
+| 4 | 28% / 29% | 46% / 50% | 27% / 19% |
+| 5 | 3% / 25% | 64% / 53% | 34% / 21% |
 
 ## Checks (not fitted)
 
-- First home bought with a mortgage, 2010–2020: median age 26
+- First home bought with a mortgage, 2010–2020: median age 27
   (ABS: first home buyers averaged 32–33 from 1995-96 to 2011-12, and 34 in 2015-16).
-- Estates passed down, 2016–2020: $10,859 per household a year. PC, 2018 (figure 1.7):
+- Estates passed down, 2016–2020: $4,701 per household a year. PC, 2018 (figure 1.7):
   $52B estimated from HILDA, $5,347 per household.
 - Heirs' median age, 2000–2020: 61 (PC: most inheritances go to people in their 50s and early 60s).
 - First home purchases by period (model count; ABS first-home-buyer loan commitments a year, for shape):
-  - 2003–2007: 18 in the model; ABS 104k a year.
-  - 2008–2012: 35 in the model; ABS 109k a year.
-  - 2013–2017: 21 in the model; ABS 88k a year.
-  - 2018–2022: 32 in the model; ABS 125k a year.
+  - 2003–2007: 25 in the model; ABS 104k a year.
+  - 2008–2012: 37 in the model; ABS 109k a year.
+  - 2013–2017: 29 in the model; ABS 88k a year.
+  - 2018–2022: 27 in the model; ABS 125k a year.
 
 ## History
 
-| Year | House price | Under 40s owning | Over 65s' share of owned homes |
+| Year | House price | 25–39s owning | Over 65s' share of owned homes |
 |---|---|---|---|
-| 1970 | $383k | 55% | 39% |
-| 1980 | $374k | 50% | 40% |
-| 1990 | $446k | 38% | 43% |
-| 2000 | $462k | 51% | 41% |
-| 2010 | $643k | 44% | 42% |
-| 2020 | $684k | 43% | 42% |
-| 2030 | $816k | 29% | 46% |
-| 2050 | $816k | 27% | 48% |
-| 2070 | $816k | 28% | 47% |
+| 1970 | $294k | 73% | 16% |
+| 1980 | $313k | 66% | 19% |
+| 1990 | $400k | 57% | 21% |
+| 2000 | $446k | 61% | 21% |
+| 2010 | $625k | 56% | 22% |
+| 2020 | $687k | 53% | 28% |
+| 2030 | $826k | 48% | 31% |
+| 2050 | $826k | 43% | 30% |
+| 2070 | $826k | 43% | 30% |
 
 After 2025 the price is held at its last level: a what-if, not a forecast.

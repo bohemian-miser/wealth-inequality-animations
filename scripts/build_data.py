@@ -17,6 +17,8 @@ Inputs (data/raw/, downloaded as published, CC BY 4.0):
   abs-4130-older-mortgage-series.csv   older owners' mortgages 1997-98 to 2019-20 (files in abs-4130-archive/)
   abs-lending-indicators-560124.xlsx   ABS Lending Indicators, first home buyers
   abs-life-tables-2022-2024.xlsx       ABS life tables 2022–2024
+  abs-erp-by-age-3101059.xlsx          ABS estimated resident population by age, 1971–2025
+  abs-household-size.csv               persons per household by Census year (sources in the file)
 
 Run: pip install -r scripts/requirements.txt && python3 scripts/build_data.py
 """
@@ -314,7 +316,7 @@ with open(os.path.join(RAW, 'oecd-house-prices-aus.csv')) as f:
         if r['MEASURE'] == 'HPI_YDH':
             ratio[int(r['TIME_PERIOD'])] = float(r['OBS_VALUE'])
 ratio_base = (ratio[2019] + ratio[2020]) / 2
-price_by_year = {y: round(price_2019_20 * v / ratio_base) for y, v in sorted(ratio.items())}
+price_by_year_per_head = {y: round(price_2019_20 * v / ratio_base) for y, v in sorted(ratio.items())}
 
 # Mortgage rate: the RBA's standard variable owner-occupier rate, averaged
 # over every month in the OECD series' years.
@@ -426,6 +428,45 @@ for k in range(11):
     s0, s1 = survive(a - 1), survive(a)
     death_q.append(round(a - 1 + (s0 - target) / (s0 - s1) if s0 != s1 else a, 2))
 
+# Population by age, 1971–2025 (ABS 3101.0 table 59, persons, June). Shares
+# of the population aged 20–94 in each 5-year group (95+ in the last), used
+# to weight the model's households by Australia's real age structure.
+wb = openpyxl.load_workbook(os.path.join(RAW, 'abs-erp-by-age-3101059.xlsx'), read_only=True, data_only=True)
+by_age = {}
+for name in ('Data1', 'Data2'):
+    rs = list(wb[name].iter_rows(values_only=True))
+    head = rs[0]
+    for j, c in enumerate(head):
+        parts = [x.strip() for x in str(c).split(';')]
+        if len(parts) < 3 or parts[1] != 'Persons':
+            continue
+        age = 100 if parts[2].startswith('100') else int(parts[2])
+        for r in rs[10:]:
+            if isinstance(r[0], datetime.datetime) and r[j] is not None:
+                by_age.setdefault(r[0].year, {})[age] = r[j]
+POP_GROUPS = [(a, a + 5) for a in range(20, 95, 5)]
+pop_share = {}
+for y, ages in sorted(by_age.items()):
+    counts = [sum(v for a, v in ages.items() if lo <= a < hi or (hi == 95 and a >= 95)) for lo, hi in POP_GROUPS]
+    total = sum(counts)
+    pop_share[y] = [round(c / total, 5) for c in counts]
+
+# Persons per household by Census year (ABS; see the CSV for each source).
+with open(os.path.join(RAW, 'abs-household-size.csv')) as f:
+    hh_size = {int(r['year']): float(r['persons_per_household']) for r in csv.DictReader(f)}
+def hh_at(y):
+    ys = sorted(hh_size)
+    if y <= ys[0]: return hh_size[ys[0]]
+    if y >= ys[-1]: return hh_size[ys[-1]]
+    a = max(k for k in ys if k <= y); b = min(k for k in ys if k >= y)
+    return hh_size[a] if a == b else hh_size[a] + (hh_size[b] - hh_size[a]) * (y - a) / (b - a)
+
+# The OECD ratio divides by income per head. Per household, income is that
+# times persons per household, so the price at 2019-20 household incomes is
+# the per-head figure × (2019-20 household size ÷ that year's).
+hh_base = (hh_at(2019) + hh_at(2020)) / 2
+price_by_year = {y: round(v * hh_base / hh_at(y)) for y, v in price_by_year_per_head.items()}
+
 # ------------------------------------------------------------ output -----
 
 data = {
@@ -462,6 +503,10 @@ data = {
     'mortgagedByAge': [v / 100 for v in mortgaged_by_age],
     'price2019_20': round(price_2019_20),
     'priceByYear': price_by_year,
+    'priceByYearPerHead': price_by_year_per_head,
+    'householdSize': {y: round(hh_at(y), 3) for y in sorted(price_by_year)},
+    'popGroups': POP_GROUPS,
+    'popShareByYear': pop_share,
     'rateLongRun': round(rate_long_run, 4),
     'realRate': round(real_rate, 4),
     'realRateByYear': real_rate_by_year,
