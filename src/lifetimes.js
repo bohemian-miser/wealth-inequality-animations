@@ -272,7 +272,7 @@ export function startLifetimes(canvas, chart, { onYear } = {}) {
     // The shares are averaged over the last 5 years (households are born every
     // 1.25 years in a row, which otherwise adds noise).
     const series = [
-      { label: 'house price (2019-20 $)', color: 'rgba(235,238,248,0.9)', at: (y) => yOfPrice(sim.stats[y - START].price) },
+      { label: 'price at 2019-20 incomes', color: 'rgba(235,238,248,0.9)', at: (y) => yOfPrice(sim.stats[y - START].price) },
       { label: '25–39s who own', color: 'rgb(120,160,255)', at: (y) => yOfPct(avg(y, (s) => s.youngOwn / s.young)) },
       { label: "over 65s' share of homes", color: 'rgb(255,140,170)', at: (y) => yOfPct(avg(y, (s) => s.homesOld / s.homes)) },
     ];

@@ -94,7 +94,7 @@
     <span><span class="sw" style="border:1.5px solid var(--gold)"></span>gold outline: bought with family help</span>
     <span>chart: house price (top); 25–39s who own, with the Census, and over 65s' share of owned homes (bottom); shares averaged over 5 years</span>
   </div>
-  <div class="minikey" aria-hidden="true"><span class="sw" style="background:var(--rent)"></span>renting <span class="sw" style="background:var(--mortgage)"></span>mortgage <span class="sw" style="background:var(--owned)"></span>owns <span class="sw" style="background:var(--gold)"></span>help <span class="sw" style="background:var(--pink)"></span>estate</div>
+  <div class="minikey" aria-hidden="true"><span class="sw" style="background:var(--rent)"></span>renting <span class="sw" style="background:var(--mortgage)"></span>mortgage <span class="sw" style="background:var(--owned)"></span>owns <span class="sw" style="background:var(--gold)"></span>help <span class="sw" style="background:var(--pink)"></span>estate · dashed: first mortgage age · green line: paid off · gold ring: helped to buy</div>
   <canvas id="stage" aria-label="Households by income decile and age through the years: renting, paying a mortgage or owning outright, with help and estates passing from parents to children"></canvas>
   <canvas id="chart" aria-label="House price, under-40s owning and over-65s' share of owned homes by year"></canvas>
   <div class="controls">
@@ -162,7 +162,7 @@
 
   function show(year) {
     const s = anim.sim.stats[Math.max(SHOW_FROM, Math.min(END, year)) - START];
-    $('year').textContent = s.year;
+    $('year').textContent = s.year > 2025 ? `${s.year} (what-if)` : s.year;
     $('nowPrice').textContent = money(s.price);
     $('nowRatio').textContent = `${(s.price / DATA.medianDisposable).toFixed(1)}×`;
     $('nowGross').textContent = `${(s.price / DATA.medianGross).toFixed(1)}×`;
