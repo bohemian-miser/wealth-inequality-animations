@@ -2045,6 +2045,13 @@ export const DATA = {
    "2021": 0.818
   }
  },
+ "dwellingFactorByQuintile": [
+  0.8083,
+  0.8388,
+  0.9076,
+  1.005,
+  1.4082
+ ],
  "tenureByIncomeQuintile": {
   "outright": [
    0.43799999999999994,

@@ -41,7 +41,7 @@ export const ROWS = 10;
 export const GAP = 30; // years between a parent and their child
 export const SPACING = 1.25; // years between neighbouring households in a row
 export const DEPOSIT = 0.2; // for a trade-up
-export const FIRST_DEPOSIT = 0.1; // for a first home (with lenders' mortgage insurance)
+export const FIRST_DEPOSIT = 0.1; // default for a first home; calibrated
 export const STARTER = 0.7; // a first home's price, as a share of the household's house price
 export const TRADE_UP_AFTER = 10; // years before trading up
 export const LOAN_TERM = 30;
@@ -71,6 +71,7 @@ export const DEFAULTS = {
   incomeSpread: 1, // 1 = one year's income spread; smaller = lifetime
   incomeNoise: 0, // sd of log income factor within a row (one or two earners, careers)
   youngIncome: 1, // income at 20 as a share of the row's, rising to 1 by 30
+  firstDeposit: FIRST_DEPOSIT, // share of a first home's price saved first
   priceSpread: 0, // sd of log house price factor
   ...CALIBRATION,
 };
@@ -172,7 +173,8 @@ export function simulate(opts = {}) {
         row: r, born, savings: 0, debt: 0, term: 0, state: RENT, home: 0, homeSince: null, died: null,
         helped: false,
         deathAge: deathAgeFor(draw(k, r, 1)),
-        priceFactor: Math.exp(p.priceSpread * z - (p.priceSpread * p.priceSpread) / 2),
+        // Richer households buy dearer homes (ABS dwelling values by income quintile).
+        priceFactor: DATA.dwellingFactorByQuintile[r >> 1] * Math.exp(p.priceSpread * z - (p.priceSpread * p.priceSpread) / 2),
         incomeFactor: Math.exp(p.incomeNoise * zi - (p.incomeNoise * p.incomeNoise) / 2),
         st: new Int8Array(nYears).fill(-1), wealth: new Float32Array(nYears),
       });
@@ -229,13 +231,14 @@ export function simulate(opts = {}) {
             const size = savings >= own ? 1 : STARTER;
             const price = size * own;
             const loan = Math.max(0, price - savings);
-            return savings >= FIRST_DEPOSIT * price && fits(loan, termFor(LOAN_TERM)) ? { size, price, loan } : null;
+            return savings >= p.firstDeposit * price && fits(loan, termFor(LOAN_TERM)) ? { size, price, loan } : null;
           };
           let buy = canBuy(h.savings);
           // Help to buy: a parent who owns outright gives a share of its
-          // wealth once, when that is what makes the purchase possible.
+          // wealth once, at its child's first purchase: with it the child may
+          // buy sooner than it could alone.
           const parent = hs[i - step];
-          if (!buy && !h.helped && age < 45 && parent && parent.state === OWNED && alive(parent, year)) {
+          if (!h.helped && age < 45 && parent && parent.state === OWNED && alive(parent, year)) {
             const gift = p.giveRate * Math.max(0, parent.savings + parent.home * P);
             if (gift > 0 && canBuy(h.savings + gift)) {
               h.savings += gift; h.helped = true;
@@ -254,11 +257,11 @@ export function simulate(opts = {}) {
         } else if (h.home < h.priceFactor && year - h.homeSince >= TRADE_UP_AFTER && age < RETIRE) {
           // Trade up, from TRADE_UP_AFTER years on, in the first year the bank
           // test passes: sell the starter, roll what's owed plus the gap into
-          // one new 20-year loan.
+          // one new 20-year loan (repaid by LAST_LOAN_AGE).
           const gap = (h.priceFactor - h.home) * P;
           const fromSavings = Math.min(h.savings, gap);
           const loan = h.debt + gap - fromSavings;
-          const term = termFor(LOAN_TERM - TRADE_UP_AFTER);
+          const term = termFor(LOAN_TERM - TRADE_UP_AFTER); // a 20-year loan, repaid by LAST_LOAN_AGE
           if (fits(loan, term)) {
             h.savings -= fromSavings;
             h.debt = loan; h.term = term;

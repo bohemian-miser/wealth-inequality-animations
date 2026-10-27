@@ -22,8 +22,8 @@ import {
 
 const SPAN = AGE_MAX - AGE_MIN;
 const HOLD_YEARS = 0.5; // an estate's ring on landing, in model years
-const RECENT_YEARS = 10; // the curves average the last this many years' events...
-const RECENT_MIN = 4; // ...where there are at least this many
+const RECENT_YEARS = 15; // the curves average the last this many years' events...
+const RECENT_MIN = 5; // ...where there are at least this many
 
 export const COLOR = {
   [RENT]: 'rgb(120,128,150)',
@@ -238,7 +238,7 @@ export function startLifetimes(canvas, chart, { onYear } = {}) {
     cctx.fillStyle = 'rgba(255,255,255,0.03)';
     cctx.fillRect(xOf(LAST_PRICE_YEAR), pad.t, xOf(END) - xOf(LAST_PRICE_YEAR), h);
     cctx.fillStyle = 'rgba(220,226,240,0.6)'; cctx.textAlign = 'left';
-    cctx.fillText('what-if: prices and rates held', xOf(LAST_PRICE_YEAR) + 6, pad.t + 9);
+    cctx.fillText(CW < 640 ? 'what-if' : 'what-if: prices and rates held', xOf(LAST_PRICE_YEAR) + 6, pad.t + h - 20);
     cctx.textAlign = 'center'; cctx.fillStyle = 'rgba(220,226,240,0.55)';
     // The shares are averaged over the last 5 years: households are born every
     // 2.5 years, which otherwise puts a sawtooth in them.
@@ -270,9 +270,19 @@ export function startLifetimes(canvas, chart, { onYear } = {}) {
       cctx.beginPath(); cctx.arc(xOf(y), yOfPct(v), 3.5, 0, Math.PI * 2); cctx.fill(); cctx.stroke();
     }
     // Why young ownership keeps falling with prices held: every new cohort meets the 2025 price.
-    if (t > LAST_PRICE_YEAR + 3) {
-      cctx.fillStyle = 'rgba(220,226,240,0.5)'; cctx.textAlign = 'left';
-      cctx.fillText('each new generation meets the 2025 price', xOf(LAST_PRICE_YEAR) + 6, pad.t + 23);
+    cctx.fillStyle = 'rgba(220,226,240,0.5)'; cctx.textAlign = 'left';
+    if (CW >= 640) cctx.fillText('each new generation meets the 2025 price', xOf(LAST_PRICE_YEAR) + 6, pad.t + h - 6);
+    // Label each line where it ends.
+    if (CW >= 640) {
+      cctx.font = '10.5px system-ui, sans-serif';
+      const last = sim.stats[upto - START];
+      const ends = [
+        ['house price', 'rgba(235,238,248,0.9)', yOfPrice(last.price)],
+        ['25–39s owning', 'rgb(120,160,255)', smoothed(series[1], upto)],
+        ['over 65s\' share of homes', 'rgb(255,140,170)', smoothed(series[2], upto)],
+      ];
+      for (const [label, color, y] of ends) { cctx.fillStyle = color; cctx.fillText(label, xOf(upto) + 6, y - 7); }
+      cctx.font = '11px system-ui, sans-serif';
     }
     cctx.strokeStyle = 'rgba(255,255,255,0.5)'; cctx.lineWidth = 1;
     cctx.beginPath(); cctx.moveTo(xOf(t), pad.t); cctx.lineTo(xOf(t), pad.t + h); cctx.stroke();

@@ -21,7 +21,7 @@ import { simulate, START, BANDS, RENT, MORTGAGE, OWNED } from '../src/model.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const GIFT_TARGET = DATA.giftFromParentsValue / DATA.households;
-const CENSUS_YEARS = [1981, 1986, 1991, 1996, 2001, 2006, 2011, 2016, 2021];
+const CENSUS_YEARS = [1971, 1976, 1981, 1986, 1991, 1996, 2001, 2006, 2011, 2016, 2021];
 const mean = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
 
 // --- what the model says --------------------------------------------------
@@ -75,15 +75,18 @@ function measure(sim) {
       renting: shareOf(part, (x) => x.st === RENT),
     };
   });
-  // Mean age at first purchase with a mortgage, 1996–2012.
-  const fb = sim.buys.filter((e) => e.kind === 'starter' && !e.cash && e.year >= 1996 && e.year <= 2012);
-  m.firstBuyAge = fb.length ? mean(fb.map((e) => e.age)) : 99;
+  // Mean age at first purchase with a mortgage, by period.
+  m.firstBuyAge = FIRST_BUY_AGE.map(([a, b]) => {
+    const fb = sim.buys.filter((e) => e.kind === 'starter' && !e.cash && e.year >= a && e.year <= b);
+    return fb.length ? mean(fb.map((e) => e.age)) : 99;
+  });
   return m;
 }
 
 // ABS Housing Occupancy and Costs: first home buyers' average age was 32–33
-// in every survey from 1995-96 to 2011-12.
-const FIRST_BUY_AGE = 32.5;
+// in every survey from 1995-96 to 2011-12, 34 in 2015-16 (ABS 4130.0 feature
+// "Across the Generations") and 35–36 in 2017-18 (as reported by AHURI).
+const FIRST_BUY_AGE = [[1996, 2012, 32.5], [2015, 2018, 34.8]];
 
 function loss(m) {
   const groups = [];
@@ -105,7 +108,8 @@ function loss(m) {
   const T = DATA.tenureByIncomeQuintile;
   m.quintiles.forEach((x, i) => q.push((x.outright - T.outright[i]) ** 2, (x.mortgage - T.mortgage[i]) ** 2, (x.renting - T.renting[i]) ** 2));
   groups.push(mean(q));
-  groups.push(((m.firstBuyAge - FIRST_BUY_AGE) / 40) ** 2); // 2 years off ≈ 5 points off
+  // Weighted double: 2 years off counts like 10 points off.
+  groups.push(2 * mean(m.firstBuyAge.map((a, i) => ((a - FIRST_BUY_AGE[i][2]) / 20) ** 2)));
   return { total: mean(groups), groups };
 }
 
@@ -139,6 +143,7 @@ const SPACE = [
   ['incomeSpread', 0.3, 1],
   ['incomeNoise', 0, 0.6],
   ['youngIncome', 0.4, 1],
+  ['firstDeposit', 0.05, 0.25],
   ['priceSpread', 0, 0.6],
 ];
 const toParams = (x) => Object.fromEntries(SPACE.map(([k, lo, hi], i) => [k, lo + (hi - lo) / (1 + Math.exp(-x[i]))]));
@@ -177,7 +182,7 @@ function nelderMead(fn, x0, { iters = 160, step = 0.6 } = {}) {
   return pts[0];
 }
 
-const start = fromParams({ saveRate: 0.19, saveFloor: 50000, housingShare: 0.3, housingSharePre1986: 0.25, incomeSpread: 0.84, incomeNoise: 0.29, youngIncome: 0.69, priceSpread: 0.4 });
+const start = fromParams({ saveRate: 0.17, saveFloor: 53000, housingShare: 0.3, housingSharePre1986: 0.26, incomeSpread: 0.86, incomeNoise: 0.32, youngIncome: 0.7, firstDeposit: 0.12, priceSpread: 0.38 });
 const best = nelderMead(f, start);
 const r3 = (v) => (Math.abs(v) >= 100 ? Math.round(v) : Math.round(v * 1000) / 1000);
 const fitted = Object.fromEntries(Object.entries(toParams(best.x)).map(([k, v]) => [k, r3(v)]));
@@ -212,16 +217,17 @@ const lines = [
   '  (1983–86) banks rationed home lending.',
   `- Income spread: **${fit.incomeSpread}** (fitted). Each lifetime-income row's income is one year's decile`,
   '  income pulled towards the age\'s middle: 1 would be one year\'s spread, 0 everyone the same.',
+  `- First-home deposit: **${Math.round(100 * fit.firstDeposit)}%** of the price (fitted; first buyers put down 5–20%).`,
   `- Income variation within a row: **${fit.incomeNoise}** (fitted, sd of log income: one or two earners, careers).`,
   `- Young incomes: at 20 a household earns **${Math.round(100 * fit.youngIncome)}%** of its row's ABS income, rising to 100% by 30 (fitted to`,
   '  first home buyers\' age; ABS incomes for households headed by under-25s include group households).',
   `- House price spread: **${fit.priceSpread}** (fitted), the standard deviation of the log of each household's`,
   '  house price relative to the mean dwelling (where it buys).',
-  `- Help to buy: **${(100 * fit.giveRate).toFixed(1)}%** of the parent's wealth, once, when it makes a purchase possible (pinned). Model gifts`,
+  `- Help to buy: **${(100 * fit.giveRate).toFixed(1)}%** of the parent's wealth, once, at the child's first purchase (pinned). Model gifts`,
   `  2017–2019: ${dollars(giftsPerHousehold(final, 2017, 2019))} per household a year; PC: ${dollars(GIFT_TARGET)}.`, '',
   `Fit (RMSE, percentage points): Census by age ${(100 * Math.sqrt(L.groups[0])).toFixed(1)}, SIH tenure by age ${(100 * Math.sqrt(L.groups[1])).toFixed(1)},`,
   `older owners over time ${(100 * Math.sqrt(L.groups[2])).toFixed(1)}, tenure by income quintile ${(100 * Math.sqrt(L.groups[3])).toFixed(1)};`,
-  `first home buyers' mean age 1996–2012 ${m.firstBuyAge.toFixed(1)} (ABS 32–33).`, '',
+  `first home buyers' mean age 1996–2012 ${m.firstBuyAge[0].toFixed(1)} (ABS 32–33), 2015–2018 ${m.firstBuyAge[1].toFixed(1)} (ABS 34–36).`, '',
   '## Census home ownership by age (model / Census)', '',
   '| Age | ' + CENSUS_YEARS.join(' | ') + ' |', '|---' + '|---'.repeat(CENSUS_YEARS.length) + '|',
   ...Object.keys(DATA.censusOwnByAge).map((g) => `| ${g} | ` + CENSUS_YEARS.map((y) => `${pct(m.census[g][y])} / ${pct(DATA.censusOwnByAge[g][y])}`).join(' | ') + ' |'),

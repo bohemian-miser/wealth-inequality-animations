@@ -76,105 +76,42 @@ Licence: CC BY 4.0. Amounts are in 2018 dollars.
   HILDA. The PC's scaled Roach (2018) figure, $70B, is said by the PC to run
   high. Used as a check; not fitted.
 
-## Calibration targets
-
-| File | What |
-|---|---|
-| `aihw-home-ownership-by-age.csv` | Census home ownership by 5-year age group, 1971–2021 (AIHW, from housingdata.gov.au) |
-| `abs-hoc-2019-20-6-age.xlsx` | ABS Housing Occupancy and Costs 2019-20, table 6.1: tenure by age |
-| `abs-sih-2019-20-5.xlsx` | ABS SIH 2019-20, table 5.3: tenure by equivalised disposable income quintile |
-| `abs-4130-older-mortgage-series.csv` | Owners outright and with a mortgage aged 45–54 and 55–64, 1997-98 to 2019-20, compiled from each ABS Housing Occupancy and Costs release (files in `abs-4130-archive/`; the CSV names each year's file and table) |
-| `abs-lending-indicators-560124.xlsx` | First-home-buyer owner-occupier loan commitments a year, 2003–2025 (a check) |
-
-## The model
-
-The model runs through history one calendar year at a time, from a warm-up
-in 1860 to 2070. The animation shows 1970–2070.
-
-- **Rows** are lifetime-income tenths. A row's income at each age is the
-  ABS decile income for that age, pulled towards the age's middle by a
-  fitted *income spread* (1 = one year's spread). The fit settled on 0.97,
-  close to one year's spread.
-  - The decile incomes are *estimated* from ABS table 10.1. ABS publishes
-    equivalised, person-weighted percentiles by age band, not household
-    deciles.
-  - A decile's mean is taken at its middle percentile (P5 extrapolated), and
-    the top decile is set so the ten average to the band's mean.
-  - Equivalised income is turned back into household income by the band's
-    mean disposable ÷ mean equivalised.
-- **Households.** Each row has one household born every 1.25 years. The
-  rows are staggered a little so they don't move in lockstep. A household's
-  parent is the one 30 years older in the same row. Each household also has:
-  - its own **house price**: a factor around the mean dwelling value, with a
-    fitted spread, standing for where it buys;
-  - its own **age at death**, from the life tables.
-- **Each year, every household:**
-  - *Saves* (before 65) a fitted share of its income above a fitted
-    living-cost floor. Gifts and estates go into savings too. From 65 it
-    spends its savings down.
-  - *Renting:* buys a **starter home** (70% of its house price) once it has
-    a 10% deposit and the bank's test passes. The test: a 30-year loan's
-    first-year repayments, at that year's nominal rate, fit within the
-    lending limit. A household that can pay cash for its full house buys
-    that instead.
-  - *From 10 years on, if under 65:* trades up to its full house price as
-    soon as a new 20-year loan passes the same test, rolling what it owes
-    into that loan.
-  - *Mortgage:* a variable-rate loan. Each year's repayment clears it over
-    the years left, at that year's nominal rate. In 2019-20 dollars the debt
-    grows at the real rate, so inflation wears it down.
-  - *Owned outright:* gives its child a set share of its wealth each year
-    until the child owns outright. The share is pinned to the PC's gift
-    total, so gifts grow with house prices. Gifts aren't taken out of the
-    parent's wealth; they stand for help paid from income.
-  - *At death:* its estate (its home at this year's price, plus what's left,
-    less debt) goes to its child.
-- **House values.** An owner's home is always worth this year's price times
-  its factor, so owners' wealth rises with the market.
-
 ## Calibration
 
-The fit is a Nelder–Mead search over five parameters, against four target
-groups weighted equally:
-- Census ownership by age, 1981–2021;
+The fit is a Nelder–Mead search over nine parameters, with bounds that keep
+each one plausible (for example, a lending limit of 25–40%). It targets five
+groups:
+- Census ownership by age, 1971–2021;
 - 2019-20 tenure by age;
 - older owners, 1997–2020;
-- 2019-20 tenure by income quintile.
-
-Bounds keep each parameter plausible, so the fit can't hide a structural gap
-behind a silly number. For example, the lending limit is held to 25–40%.
+- 2019-20 tenure by income quintile;
+- first home buyers' average age (1996–2012: 32.5; 2015–2018: 34.8), which
+  counts double.
 
 Result:
 
 | Parameter | Value |
 |---|---|
-| Saving | 18.9% of income above $54k |
-| Lending limit | 25% of income, at the lower bound |
-| Income spread | 0.97 |
-| House price spread | 0.47 |
-| Gift rate | 0.26% of the parent's wealth a year |
+| Lending limit | about 30% of income (27% before 1986) |
+| First-home deposit | 12% |
+| Saving | 17.7% of income above about $54k |
+| Help to buy | 9.9% of the parent's wealth, once; $1,280 per household a year against the PC's $1,214 |
 
-Fit (root-mean-square error, percentage points):
+Fit, first buyers' mean age: 31.0 (1996–2012) and 33.9 (2015–2018).
 
-| Target group | Error |
-|---|---|
-| Census by age | 5.0 |
-| 2019-20 tenure by age | 6.5 |
-| Older owners over time | 11.9 |
-| Tenure by income quintile | 10.0 |
+Estates passed down come to about $5,400 per household a year, against the
+PC's $5,300 (HILDA).
 
-The full tables and the checks are in `data/CALIBRATION.md`.
+The full tables, errors and checks are in `data/CALIBRATION.md`.
 
 ## Known gaps
 
-- First buyers are younger in the model (a median of 26 for 2010–2020) than
-  the ABS's average of 32–34.
-- Too few high-income households rent: 3% of the top income fifth, against
+- 45–54-year-olds own outright too rarely in the model (about 5–10%, against
+  ABS's 43% in 1997 falling to 15% in 2019-20). Trade-ups keep them mortgaged.
+- Too few high-income households rent: 6% of the top income fifth, against
   ABS's 25%.
-- Estates passed down run about twice the PC's estimate.
-- 45–54-year-olds in the late 1990s own outright too rarely.
-- The lowest row rents for life.
-- Every household keeps one row and has one child. After 2025, prices and
+- The early 1970s show more young owners than the Census.
+- Every household has one row and one child in it. After 2025, prices and
   rates are held (a what-if).
 
 ## Reference only

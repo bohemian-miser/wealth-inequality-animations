@@ -381,6 +381,18 @@ q_outright = nums(t53[find(t53, 'Owner without a mortgage')])[:5]
 q_mortgage = nums(t53[find(t53, 'Owner with a mortgage')])[:5]
 q_renters = nums(t53[find(t53, 'Total renters')])[:5]
 
+# Dwelling value by income: the mean value of owner-occupied dwellings by
+# equivalised disposable income quintile (table 5.2, across all households)
+# over each quintile's share of owners (table 5.3) gives the mean among
+# owners; relative to the overall mean among owners, it scales each row's
+# house prices (richer households buy dearer homes).
+t52 = rows(sheet('abs-sih-2019-20-5.xlsx', 'Table 5.2'), 45)
+oo_value = nums(t52[find(t52, 'Value of owner occupied dwelling')])[:6]
+owners_q = [o + m for o, m in zip(q_outright, q_mortgage)]
+value_among_owners = [v / (o / 100) for v, o in zip(oo_value[:5], owners_q)]
+value_all_owners = oo_value[5] / ((DATA_OWN_TOTAL := sum(owners_q) / 5) / 100)
+dwelling_factor = [round(v / value_all_owners, 4) for v in value_among_owners]
+
 # Older owners' mortgages over time (ABS Housing Occupancy and Costs releases;
 # see the CSV for each year's file and table). Check 2019-20 against table 6.1.
 older = []
@@ -514,6 +526,7 @@ data = {
     'paidNominalRate': round(paid_nominal, 4),
     'deathAgeQuantiles': death_q,
     'censusOwnByAge': {g: own_by_age[g] for g in census_groups},
+    'dwellingFactorByQuintile': dwelling_factor,
     'tenureByIncomeQuintile': {'outright': [v / 100 for v in q_outright], 'mortgage': [v / 100 for v in q_mortgage], 'renting': [v / 100 for v in q_renters]},
     'olderMortgage': older,
     'firstHomeBuyerLoans': fhb_loans,

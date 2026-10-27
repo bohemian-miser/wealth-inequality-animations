@@ -45,6 +45,8 @@
   .speed .unit { color: var(--muted); font-size: 13px; }
   .readout { color: var(--muted); }
   .readout b { color: var(--fg); font-weight: 600; }
+  details summary { cursor: pointer; color: var(--muted); font-size: 13px; margin: 2px 0 6px; }
+  details[open] summary { display: none; }
   .legend { display: flex; flex-wrap: wrap; gap: 4px 18px; color: var(--muted);
     font-size: 12.5px; padding-top: 8px; }
   .sw { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px;
@@ -54,11 +56,14 @@
   section h2 { color: var(--fg); font-size: 16px; margin: 18px 0 6px; }
   section a { color: var(--fg); }
   section li { margin: 4px 0; }
+  /* On a phone the legend folds away with the intro (after .legend, so it wins). */
+  @media (max-width: 640px) { details[open] summary { display: block; } .legend { display: none; } body.legend-open .legend { display: flex; } }
 </style>
 </head>
 <body>
   <header>
     <h1>Passing it back</h1>
+    <details id="howto" open><summary>How to read this</summary>
     <p>Each dot is a household, ageing left to right as the years run from 1970. Rows group
       households by lifetime income, highest at the top; a dot's size is its wealth. Households
       rent and save, buy when they can, trade up, and pay it off; owners' homes rise in value with
@@ -66,10 +71,11 @@
       dies, its <span class="pink">● estate</span> passes to its child, usually in their 50s or 60s.
       Each dot in a row is a different household born in a different year, so a row is not one
       life: older dots bought when houses were cheaper.</p>
+    </details>
   </header>
   <div class="now">
     <span class="year" id="year">1970</span>
-    <span>A home costs <b id="nowRatio">–</b> a middle income (<span id="nowPrice">–</span> at 2019-20 incomes)</span>
+    <span>A home costs <b id="nowRatio">–</b> a middle household's after-tax income (<span id="nowPrice">–</span> in 2019-20 terms)</span>
     <span>25–39s who own <b id="nowYoung" class="mortgage">–</b></span>
     <span>Over 65s' share of owned homes <b id="nowOld" class="pink">–</b></span>
   </div>
@@ -78,10 +84,11 @@
     <span><span class="sw" style="background:var(--rent)"></span>renting, saving a deposit</span>
     <span><span class="sw" style="background:var(--mortgage)"></span>paying a mortgage</span>
     <span><span class="sw" style="background:var(--owned)"></span>owns outright</span>
-    <span><span class="ln" style="border-top:2px dashed var(--mortgage)"></span>average age the row took out its first mortgage (last 10 years, 3+ buyers)</span>
+    <span><span class="ln" style="border-top:2px dashed var(--mortgage)"></span>average age the row took out its first mortgage (last 15 years, 5+ buyers)</span>
     <span><span class="ln" style="border-top:2px solid var(--owned)"></span>…paid off its last mortgage</span>
     <span><span class="sw" style="background:var(--gold)"></span>yearly help</span>
     <span><span class="sw" style="background:var(--pink)"></span>an estate passing down (a ring as it lands)</span>
+    <span>bars at right: each row now — renting · mortgage · owned</span>
     <span>chart: <span class="ln" style="border-top:2px solid #ebeef8"></span>house price ·
       <span class="ln" style="border-top:2px solid var(--mortgage)"></span>25–39s who own (dots: Census) ·
       <span class="ln" style="border-top:2px solid var(--pink)"></span>over 65s' share of owned homes · left axis $0–1.2M, right axis %, shares averaged over 5 years · shaded: what-if, prices and rates held after 2025</span>
@@ -101,28 +108,33 @@
     <h2>What's real and what's assumed</h2>
     <ul>
       <li><b>Rows</b> are lifetime-income tenths. Incomes come from ABS 2019-20 household disposable
-        incomes by age (<i>Household Income and Wealth</i>), pulled towards each age's middle, because
-        one year's income is far more spread out than a lifetime's; the pull is fitted. ABS hasn't
-        released a newer survey (2020-21 and 2021-22 were cancelled; 2023-24 was withheld).</li>
-      <li><b>Each household</b> has its own house price (where it buys, spread around the ABS mean
-        dwelling value) and its own age at death (spread as in ABS life tables; a couple's household
-        ends at the second death). Its parent is the household 30 years older in the same row.</li>
+        incomes by age (<i>Household Income and Wealth</i>), pulled slightly towards each age's middle,
+        and vary within each row (one or two earners, careers); young households earn less until 30.
+        ABS hasn't released a newer survey (2020-21 and 2021-22 were cancelled; 2023-24 was withheld).</li>
+      <li><b>Each household</b> has its own house price: richer rows buy dearer homes, scaled by ABS
+        dwelling values by income, with a spread for where people live. It has its own age at death
+        (ABS life tables; a couple's household ends at the second death), and its parent is the
+        household 30 years older in the same row.</li>
       <li><b>House prices</b> start from the ABS mean dwelling value, $685k in 2019-20, and move with
-        the OECD price-to-income ratio, so they are prices at 2019-20 incomes: $376k in 1985, $818k in
-        2024. The ratio is per person, so the early years are somewhat overstated.</li>
-      <li><b>Mortgages</b> follow each year's actual rates (RBA rates paid, and CPI): a 10% deposit on
-        a first home (a starter, below its full price), the bank's test of the first year's repayments,
-        variable-rate repayments, and inflation wearing the debt down, fast in the 1970s and 80s. After
-        10 years a household trades up if it can.</li>
-      <li><b>Calibrated</b> against history: Census home ownership by age 1981–2021, ABS tenure by
-        age and by income in 2019-20, and the rise in 55–64-year-olds still paying a mortgage since the
-        late 1990s. Saving (out of income above a living-cost floor), the lending limit (25% of income
-        in first-year repayments) and the two spreads are fitted; gifts are set so their total matches
-        the Productivity Commission's figure for gifts from parents.</li>
-      <li><b>Where it's off</b>: first buyers are younger than ABS's average (32–34), too few
-        high-income households rent, estates passed down run about twice the PC's estimate, and every
-        household keeps one lifetime-income row and one child. After 2025, prices and rates are held:
-        a what-if, not a forecast.</li>
+        the OECD price-to-income ratio, corrected for shrinking households (Census), so they are prices
+        in 2019-20 terms: $294k in 1970, $400k in 1995, $826k in 2025.</li>
+      <li><b>Mortgages</b> follow each year's actual rates (RBA rates paid, and CPI): a deposit on a
+        starter home, the bank's test of the first year's repayments, variable-rate repayments,
+        inflation wearing the debt down (fast in the 1970s and 80s), loans repaid by 75. From 10 years
+        on, a household trades up if it can, on a new 20-year loan.</li>
+      <li><b>Help and estates</b>: a parent who owns outright helps once, at the child's first purchase,
+        with a share of its wealth (so help grows with prices; its size is set by the Productivity
+        Commission's figure for gifts from parents). An estate splits between two children; one is in
+        the row, and the half that reaches it comes to about $5,400 per household a year, close to the
+        PC's estimate.</li>
+      <li><b>Calibrated</b> against history: Census home ownership by age 1971–2021, ABS tenure by age
+        and by income in 2019-20, the rise in 55–64-year-olds with a mortgage since the late 1990s, and
+        first home buyers' average age (32–33, rising to 34–36). The fitted lending limit is about 30%
+        of income and the first-home deposit about 12%.</li>
+      <li><b>Where it's off</b>: too few 45–54-year-olds own outright, too few high-income households
+        rent, and the early 1970s show more young owners than the Census. Statistics weight households
+        by Australia's real age mix each year. After 2025, prices and rates are held: a what-if, not a
+        forecast.</li>
     </ul>
     <p>Full method, every source table and the checks:
       <a href="https://github.com/bohemian-miser/wealth-inequality-animations">github.com/bohemian-miser/wealth-inequality-animations</a>
@@ -150,6 +162,11 @@
     $('nowOld').textContent = pct(anim.smoothed(s.year, (x) => x.homesOld / x.homes));
     if (!dragging) scrub.value = s.year;
   }
+  // On a phone, the intro and legend fold away so the picture comes first.
+  const howto = $('howto');
+  if (matchMedia('(max-width: 640px)').matches) howto.open = false;
+  const syncLegend = () => document.body.classList.toggle('legend-open', howto.open);
+  howto.addEventListener('toggle', syncLegend); syncLegend();
   const anim = startLifetimes($('stage'), $('chart'), { onYear: show });
   function drawSizeKey() {
     const key = $('sizeKey');
