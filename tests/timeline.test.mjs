@@ -63,7 +63,7 @@ test('households never show a year after they died', () => {
   }
 });
 
-test('drawn wealth moves smoothly except when an estate or help lands', () => {
+test('drawn wealth moves smoothly except when an estate or help lands, or a couple splits', () => {
   const landings = new Map();
   for (const b of sim.bequests) landings.set(b.to, [...(landings.get(b.to) ?? []), estateTiming(b).land]);
   for (const g of sim.gifts) landings.set(g.to, [...(landings.get(g.to) ?? []), giftTiming(g).land]);
@@ -73,7 +73,8 @@ test('drawn wealth moves smoothly except when an estate or help lands', () => {
     for (let t = Math.max(1970, h.born + 20.5); t < Math.min(2070, h.born + 89); t += 0.05) {
       const { w } = shownState(h, t, arrivals);
       if (prev !== null) {
-        const near = (landings.get(h) ?? []).some((l) => Math.abs(l - t) < 0.06);
+        const near = (landings.get(h) ?? []).some((l) => Math.abs(l - t) < 0.06)
+          || (h.splitAge !== null && Math.abs(t - h.born - h.splitAge) < 1.5);
         // Allowed: a purchase or trade-up can move wealth (stamp-duty-free model:
         // savings become equity), but not by more than a few percent of a home.
         if (!near && Math.abs(w - prev) > 60000) jumps++;

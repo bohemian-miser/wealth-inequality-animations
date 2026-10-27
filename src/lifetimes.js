@@ -213,53 +213,63 @@ export function startLifetimes(canvas, chart, { onYear } = {}) {
   }
 
   // The strip chart: house price, under-40s owning, over-65s' share of homes.
+  // The chart: two stacked panels sharing the years, so a price line and a
+  // percentage line never seem to cross. Top: the house price. Bottom:
+  // 25–39s owning (with the Census) and over-65s' share of owned homes.
   function drawChart() {
-    const pad = { l: 46, r: 46, t: 10, b: 20 };
-    const w = CW - pad.l - pad.r, h = CH - pad.t - pad.b;
+    const pad = { l: 46, r: CW >= 640 ? 150 : 40, t: 8, b: 20, gap: 12 };
+    const w = CW - pad.l - pad.r;
+    const hTop = Math.round((CH - pad.t - pad.b - pad.gap) * 0.38);
+    const hBot = CH - pad.t - pad.b - pad.gap - hTop;
+    const top0 = pad.t, bot0 = pad.t + hTop + pad.gap;
     cctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     cctx.clearRect(0, 0, CW, CH);
     cctx.font = '11px system-ui, sans-serif';
     cctx.textBaseline = 'middle';
     const xOf = (year) => pad.l + ((year - SHOW_FROM) / (END - SHOW_FROM)) * w;
-    const PRICE_MAX = 1.2e6; // so $ and % gridlines don't coincide
-    const yOfPrice = (p) => pad.t + h - (p / PRICE_MAX) * h;
-    const yOfPct = (v) => pad.t + h - v * h;
+    const PRICE_MAX = 1e6;
+    const yOfPrice = (p) => top0 + hTop - (p / PRICE_MAX) * hTop;
+    const yOfPct = (v) => bot0 + hBot - v * hBot;
+    const muted = 'rgba(220,226,240,0.55)';
+    // Frames, gridlines and axes.
     cctx.strokeStyle = 'rgba(255,255,255,0.08)'; cctx.lineWidth = 1;
-    for (const v of [0, 0.5, 1]) { cctx.beginPath(); cctx.moveTo(pad.l, yOfPct(v)); cctx.lineTo(pad.l + w, yOfPct(v)); cctx.stroke(); }
-    cctx.fillStyle = 'rgba(220,226,240,0.55)';
-    cctx.textAlign = 'right';
-    for (const [p, label] of [[0, '$0'], [600e3, '$600k'], [1.2e6, '$1.2M']]) cctx.fillText(label, pad.l - 6, yOfPrice(p));
-    cctx.textAlign = 'left';
-    for (const v of [0, 0.5, 1]) cctx.fillText(`${v * 100}%`, pad.l + w + 6, yOfPct(v));
+    for (const y of [yOfPrice(0), yOfPrice(5e5), yOfPrice(1e6), yOfPct(0), yOfPct(0.5), yOfPct(1)]) {
+      cctx.beginPath(); cctx.moveTo(pad.l, y); cctx.lineTo(pad.l + w, y); cctx.stroke();
+    }
+    cctx.fillStyle = muted; cctx.textAlign = 'right';
+    for (const [p, label] of [[0, '$0'], [5e5, '$500k'], [1e6, '$1M']]) cctx.fillText(label, pad.l - 6, yOfPrice(p));
+    for (const v of [0, 0.5, 1]) cctx.fillText(`${v * 100}%`, pad.l - 6, yOfPct(v));
     cctx.textAlign = 'center';
     const every = CW < 640 ? 20 : 10;
     for (let y = SHOW_FROM; y <= END; y += every) cctx.fillText(String(y), xOf(y), CH - 8);
-    // After the data: held at the last year's price.
+    // After the data: held at the last year's price and rates.
     cctx.fillStyle = 'rgba(255,255,255,0.03)';
-    cctx.fillRect(xOf(LAST_PRICE_YEAR), pad.t, xOf(END) - xOf(LAST_PRICE_YEAR), h);
+    cctx.fillRect(xOf(LAST_PRICE_YEAR), top0, xOf(END) - xOf(LAST_PRICE_YEAR), CH - pad.t - pad.b);
     cctx.fillStyle = 'rgba(220,226,240,0.6)'; cctx.textAlign = 'left';
-    cctx.fillText(CW < 640 ? 'what-if' : 'what-if: prices and rates held', xOf(LAST_PRICE_YEAR) + 6, pad.t + h - 20);
-    cctx.textAlign = 'center'; cctx.fillStyle = 'rgba(220,226,240,0.55)';
-    // The shares are averaged over the last 5 years: households are born every
-    // 2.5 years, which otherwise puts a sawtooth in them.
+    cctx.fillText(CW < 640 ? 'what-if' : 'what-if: prices and rates held after 2025', xOf(LAST_PRICE_YEAR) + 6, top0 + 8);
+    if (CW >= 640) {
+      cctx.fillStyle = 'rgba(220,226,240,0.45)';
+      cctx.fillText('ownership still falls: each new generation meets the 2025 price', xOf(LAST_PRICE_YEAR) + 6, bot0 + hBot - 8);
+    }
+    // The shares are averaged over the last 5 years (households are born every
+    // 1.25 years in a row, which otherwise adds noise).
     const series = [
-      { color: 'rgba(235,238,248,0.9)', y: (s) => yOfPrice(s.price), smooth: false },
-      { color: 'rgb(120,160,255)', v: (s) => s.youngOwn / s.young, smooth: true },
-      { color: 'rgb(255,140,170)', v: (s) => s.homesOld / s.homes, smooth: true },
+      { label: 'house price (2019-20 $)', color: 'rgba(235,238,248,0.9)', at: (y) => yOfPrice(sim.stats[y - START].price) },
+      { label: '25–39s who own', color: 'rgb(120,160,255)', at: (y) => yOfPct(avg(y, (s) => s.youngOwn / s.young)) },
+      { label: "over 65s' share of homes", color: 'rgb(255,140,170)', at: (y) => yOfPct(avg(y, (s) => s.homesOld / s.homes)) },
     ];
-    const smoothed = (sr, y) => {
+    function avg(y, f) {
       let sum = 0, n = 0;
-      for (let k = Math.max(SHOW_FROM, y - 4); k <= y; k++) { sum += sr.v(sim.stats[k - START]); n++; }
-      return yOfPct(sum / n);
-    };
+      for (let k = Math.max(SHOW_FROM, y - 4); k <= y; k++) { sum += f(sim.stats[k - START]); n++; }
+      return sum / n;
+    }
     const upto = Math.min(END, Math.floor(t));
     for (const sr of series) {
       cctx.strokeStyle = sr.color; cctx.fillStyle = sr.color; cctx.lineWidth = 2;
-      const yAt = (y) => (sr.smooth ? smoothed(sr, y) : sr.y(sim.stats[y - START]));
       cctx.beginPath();
-      for (let y = SHOW_FROM; y <= upto; y++) y === SHOW_FROM ? cctx.moveTo(xOf(y), yAt(y)) : cctx.lineTo(xOf(y), yAt(y));
+      for (let y = SHOW_FROM; y <= upto; y++) y === SHOW_FROM ? cctx.moveTo(xOf(y), sr.at(y)) : cctx.lineTo(xOf(y), sr.at(y));
       cctx.stroke();
-      cctx.beginPath(); cctx.arc(xOf(upto), yAt(upto), 2.5, 0, Math.PI * 2); cctx.fill();
+      cctx.beginPath(); cctx.arc(xOf(upto), sr.at(upto), 2.5, 0, Math.PI * 2); cctx.fill();
     }
     // Census: home ownership at 25–39 (the three 5-year groups, averaged).
     cctx.fillStyle = 'rgb(120,160,255)';
@@ -269,23 +279,18 @@ export function startLifetimes(canvas, chart, { onYear } = {}) {
       cctx.strokeStyle = 'rgba(13,16,32,1)'; cctx.lineWidth = 1.5;
       cctx.beginPath(); cctx.arc(xOf(y), yOfPct(v), 3.5, 0, Math.PI * 2); cctx.fill(); cctx.stroke();
     }
-    // Why young ownership keeps falling with prices held: every new cohort meets the 2025 price.
-    cctx.fillStyle = 'rgba(220,226,240,0.5)'; cctx.textAlign = 'left';
-    if (CW >= 640) cctx.fillText('each new generation meets the 2025 price', xOf(LAST_PRICE_YEAR) + 6, pad.t + h - 6);
-    // Label each line where it ends.
+    // Labels in the right margin, level with each line's latest value.
     if (CW >= 640) {
-      cctx.font = '10.5px system-ui, sans-serif';
-      const last = sim.stats[upto - START];
-      const ends = [
-        ['house price', 'rgba(235,238,248,0.9)', yOfPrice(last.price)],
-        ['25–39s owning', 'rgb(120,160,255)', smoothed(series[1], upto)],
-        ['over 65s\' share of homes', 'rgb(255,140,170)', smoothed(series[2], upto)],
-      ];
-      for (const [label, color, y] of ends) { cctx.fillStyle = color; cctx.fillText(label, xOf(upto) + 6, y - 7); }
+      cctx.font = '10.5px system-ui, sans-serif'; cctx.textAlign = 'left';
+      for (const sr of series) { cctx.fillStyle = sr.color; cctx.fillText(sr.label, pad.l + w + 8, sr.at(upto)); }
+      cctx.fillStyle = 'rgb(120,160,255)';
+      cctx.fillText('● Census', pad.l + w + 8, Math.min(bot0 + hBot - 4, series[1].at(upto) + 13));
       cctx.font = '11px system-ui, sans-serif';
     }
     cctx.strokeStyle = 'rgba(255,255,255,0.5)'; cctx.lineWidth = 1;
-    cctx.beginPath(); cctx.moveTo(xOf(t), pad.t); cctx.lineTo(xOf(t), pad.t + h); cctx.stroke();
+    for (const [y0, hh] of [[top0, hTop], [bot0, hBot]]) {
+      cctx.beginPath(); cctx.moveTo(xOf(t), y0); cctx.lineTo(xOf(t), y0 + hh); cctx.stroke();
+    }
   }
 
   let last = performance.now();

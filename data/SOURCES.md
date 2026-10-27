@@ -69,48 +69,126 @@ Licence: CC BY 4.0. Amounts are in 2018 dollars.
 <https://www.pc.gov.au/inquiries-and-research/wealth-transfers>
 
 - **Gifts from parents** in 2018-19 totalled **$11.8B** (figure 1.9). Divided
-  by 9,732,400 households, that is **$1,214** per household a year, and the
-  model's gift rate is pinned to it. HILDA counts people, and all gifts from
-  parents, not only help with housing.
+  by 9,732,400 households, that is **$1,214** per household a year. HILDA
+  counts people, and all gifts from parents, not only help with housing, so
+  this is a check on the model's help to buy, not a target.
 - **Inheritance outflow, 2018** (figure 1.7): **$52B** estimated from
   HILDA. The PC's scaled Roach (2018) figure, $70B, is said by the PC to run
   high. Used as a check; not fitted.
 
+## Calibration targets
+
+| File | What |
+|---|---|
+| `aihw-home-ownership-by-age.csv` | Census home ownership by 5-year age group, 1971–2021 (AIHW, from housingdata.gov.au) |
+| `abs-hoc-2019-20-6-age.xlsx` | ABS Housing Occupancy and Costs 2019-20, table 6.1: tenure by age |
+| `abs-sih-2019-20-5.xlsx` | ABS SIH 2019-20, tables 5.2 and 5.3: tenure and dwelling values by equivalised disposable income quintile |
+| `abs-4130-older-mortgage-series.csv` | Owners outright and with a mortgage aged 45–54 and 55–64, 1997-98 to 2019-20, compiled from each ABS Housing Occupancy and Costs release (files in `abs-4130-archive/`; the CSV names each year's file and table) |
+| `abs-erp-by-age-3101059.xlsx` | ABS estimated resident population by age, 1971–2025 (weights for the statistics) |
+| `abs-household-size.csv` | Persons per household by Census year (the price correction; sources in the file) |
+| `abs-lending-indicators-560124.xlsx` | First-home-buyer loan commitments a year, 2003–2025 (a check) |
+
+## The model
+
+The model runs through history one calendar year at a time, from a warm-up
+in 1860 to 2070. The animation shows 1970–2070.
+
+- **Rows** are lifetime-income tenths. A row's income at each age is the
+  ABS decile income for that age, pulled towards the age's middle by a
+  fitted *income spread*.
+  - The decile incomes are *estimated* from ABS table 10.1. ABS publishes
+    equivalised, person-weighted percentiles by age band, not household
+    deciles.
+  - Each household's income also varies around its row's, by a fitted
+    spread (one or two earners, careers).
+  - Below 30, income is a fitted share of the row's, rising to all of it by
+    30. ABS incomes for households headed by under-25s include group
+    households.
+- **Households.** Each row has one household born every 1.25 years. A
+  household's parent is the one 30 years older in the same row. Each
+  household has its own:
+  - **house price:** the mean dwelling value × its income quintile's
+    relative dwelling value (ABS table 5.2 over 5.3: 0.81 for the lowest
+    quintile up to 1.41 for the highest) × a factor for where it lives
+    (fitted spread);
+  - **age at death:** from the life tables;
+  - **chance of separating.**
+- **Each year, every household:**
+  - *Saves* (before 65) a share of its income that rises with income (a
+    fitted maximum, reached half of at a fitted income), so low earners save
+    a little and high earners a lot. Estates and help go into savings. From
+    65 it spends its savings down.
+  - *Renting:* buys a **starter home** (70% of its house price) once it has
+    the fitted first-home deposit and the bank's test passes. The test: a
+    loan's first-year repayments, at that year's nominal rate, within the
+    lending limit. Loans run up to 30 years and must be repaid by 75. A
+    household that can pay cash for its full house buys that instead.
+  - *Help to buy:* at its first purchase, if its parent owns outright, the
+    parent gives once 10% of its wealth, up to a fitted cap ($49k). With it
+    the child may buy sooner than it could alone. The PC's gift total ($1,214
+    per household a year) counts all gifts from parents, not only help with
+    housing. The model's housing help comes to about $210, a check rather
+    than a target.
+  - *From 10 years on, if under 65:* trades up to its full house price as
+    soon as a new 20-year loan (repaid by 75) passes the same test, rolling
+    what it owes into it.
+  - *Mortgage:* a variable-rate loan. Each year's repayment clears it over
+    the years left at that year's nominal rate, while in 2019-20 dollars the
+    debt grows at the real rate, so inflation wears it down.
+  - *Separates:* 30% of households split up at some point between 30 and
+    60. A split owner sells, keeps half the equity and rents again, and may
+    buy again later (a re-buy, not a first home). ABS: roughly a third of
+    marriages end in divorce.
+  - *At death:* its estate (its home at this year's price, plus what's left,
+    less debt) splits between two children; the one in the row gets half.
+- **House values.** An owner's home is always worth this year's price times
+  its factor, so owners' wealth rises with the market.
+- **Statistics** weight households by Australia's real age structure each
+  year (ABS estimated resident population by age). The model itself has the
+  same number born every year.
+
 ## Calibration
 
-The fit is a Nelder–Mead search over nine parameters, with bounds that keep
-each one plausible (for example, a lending limit of 25–40%). It targets five
-groups:
+The fit is a Nelder–Mead search over eleven parameters. Bounds keep each
+one plausible; for example, the lending limit is held to 25–40%. It targets
+five groups:
 - Census ownership by age, 1971–2021;
 - 2019-20 tenure by age;
 - older owners, 1997–2020;
 - 2019-20 tenure by income quintile;
-- first home buyers' average age (1996–2012: 32.5; 2015–2018: 34.8), which
-  counts double.
+- first home buyers' average age (1996–2012: 32.5; 2015–2018: 34.8),
+  counted double.
 
 Result:
 
 | Parameter | Value |
 |---|---|
-| Lending limit | about 30% of income (27% before 1986) |
-| First-home deposit | 12% |
-| Saving | 17.7% of income above about $54k |
-| Help to buy | 9.9% of the parent's wealth, once; $1,280 per household a year against the PC's $1,214 |
+| Lending limit | about 29% of income (26% before 1986) |
+| First-home deposit | 17% |
+| Saving | up to 21.5% of income, rising with income |
+| Help to buy cap | $49k |
 
-Fit, first buyers' mean age: 31.0 (1996–2012) and 33.9 (2015–2018).
+Fit (root-mean-square error, percentage points):
 
-Estates passed down come to about $5,400 per household a year, against the
-PC's $5,300 (HILDA).
+| Target | Error |
+|---|---|
+| Census by age | 8.5 |
+| 2019-20 tenure by age | 7.2 |
+| Older owners over time | 7.9 |
+| Tenure by income quintile | 5.8 |
+
+First buyers' mean age: 32.5 (1996–2012) and 34.2 (2015–2018). Estates
+passed down come to about $4,800 per household a year, against the PC's
+$5,300 (HILDA).
 
 The full tables, errors and checks are in `data/CALIBRATION.md`.
 
 ## Known gaps
 
-- 45–54-year-olds own outright too rarely in the model (about 5–10%, against
-  ABS's 43% in 1997 falling to 15% in 2019-20). Trade-ups keep them mortgaged.
-- Too few high-income households rent: 6% of the top income fifth, against
-  ABS's 25%.
-- The early 1970s show more young owners than the Census.
+- Older households own too often in the model: about 85–90% of over-65s,
+  against the Census's about 80%.
+- Young ownership bumps up in the late 1990s in the model, while the Census
+  shows a steady decline. The model has no trend to later partnering.
 - Every household has one row and one child in it. After 2025, prices and
   rates are held (a what-if).
 

@@ -28,13 +28,18 @@ test('a household has a state exactly in the years it is alive', () => {
   }
 });
 
-test('nobody goes back to renting, and states only move forward', () => {
+test('owners go back to renting only when they split up', () => {
   const allowed = new Set([`${RENT}>${MORTGAGE}`, `${RENT}>${OWNED}`, `${MORTGAGE}>${OWNED}`, `${OWNED}>${MORTGAGE}`]);
   for (const h of all) {
     let prev = null;
-    for (const st of h.st) {
+    for (let k = 0; k < h.st.length; k++) {
+      const st = h.st[k];
       if (st < 0) continue;
-      if (prev !== null && st !== prev) assert.ok(allowed.has(`${prev}>${st}`), `${prev} → ${st}`);
+      if (prev !== null && st !== prev && !allowed.has(`${prev}>${st}`)) {
+        assert.equal(st, RENT, `${prev} → ${st}`);
+        const age = START + k - h.born;
+        assert.ok(h.splitAge !== null && age >= h.splitAge && age < h.splitAge + 1, 'back to renting only at the split');
+      }
       prev = st;
     }
   }
